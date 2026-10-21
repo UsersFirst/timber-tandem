@@ -92,17 +92,19 @@ async function run(name) {
     if (name === 'bots') {
       const host = await page(`${base}/?host&bots=A:good,B:good`, 'host', errors); pages.push(host);
       await waitFor(host, () => window.__game?.canStart(), { label: 'can start' });
-      await host.evaluate(() => window.__game.start());
+      await host.evaluate(() => { window.__game.start(); window.__game.safetyOk(); window.__game.skipIntro(); });
       await sleep(1500);
-      await host.evaluate(() => window.__game.skipIntro());
       const s1 = await playTree(host, 'bots');
       check(s1.temper >= 95 && s1.tantrums === 0, `perfect bots: temper ${s1.temper}, tantrums ${s1.tantrums}`);
       await host.evaluate(() => window.__game.next());
       const s2 = await playTree(host, 'bots-big');
       check(s2.tree === 'Big pine', 'second tree is the big pine');
-      await host.evaluate(() => window.__game.next());
+      await host.evaluate(() => window.__game.finish());
       await waitFor(host, () => window.__game.phase === 'end', { label: 'end' });
       check(true, 'reached the end screen');
+      await host.evaluate(() => window.__game.more());
+      await waitFor(host, () => window.__game.phase === 'notch', { label: 'one more tree' });
+      check(true, 'one more tree goes straight to the notch');
     }
 
     if (name === 'phones' || name === 'lag' || name === 'waggle') {
@@ -114,15 +116,14 @@ async function run(name) {
       if (shots) { await pa.setViewport({ width: 390, height: 780 }); await sleep(800); await pa.screenshot({ path: path.join(outDir, 'smoke-phone.png') }); }
       const pb = await phone(links[1], name === 'lag' ? 'late:260' : name === 'waggle' ? 'fast' : 'good', 'phoneB', errors); pages.push(pb);
       await waitFor(host, () => window.__game?.canStart(), { label: 'both ready' });
-      await host.evaluate(() => window.__game.start());
+      await host.evaluate(() => { window.__game.start(); window.__game.safetyOk(); window.__game.skipIntro(); });
       if (shots) { await sleep(1500); await host.screenshot({ path: path.join(outDir, `smoke-${name}-calib.png`) }); }
-      await waitFor(host, () => window.__game.phase === 'intro', { timeout: 120000, label: 'calibration done' });
+      await waitFor(host, () => ['notch', 'saw'].includes(window.__game.phase), { timeout: 120000, label: 'calibration done' });
       const cal = await host.evaluate(() => Object.values(window.__game.seats).map((s) => ({ id: s.id, calib: s.calib, lag: s.buffer.lagMs, tempo: s.tempo })));
       for (const c of cal) {
         const steps = ['rest', 'pull', 'saw', 'twist', 'chop'];
         check(steps.every((k) => c.calib[k] === 'ok'), `${c.id} calibrated: ${steps.map((k) => k + ':' + c.calib[k]).join(' ')} lag ${Math.round(c.lag)}ms tempo ${c.tempo}`);
       }
-      await host.evaluate(() => window.__game.skipIntro());
       if (name === 'lag') {
         await waitFor(host, () => window.__game.phase === 'saw', { timeout: 90000, label: 'saw' });
         await sleep(15000);
@@ -154,9 +155,8 @@ async function run(name) {
       const pa = await phone(link, 'good', 'phoneA', errors); pages.push(pa);
       await waitFor(host, () => window.__game?.canStart(), { label: 'ready' });
       check(await host.evaluate(() => window.__game.seats.B.kind === 'grandma'), 'Grandma holds the far handle');
-      await host.evaluate(() => window.__game.start());
-      await waitFor(host, () => window.__game.phase === 'intro', { timeout: 120000, label: 'calibration done' });
-      await host.evaluate(() => window.__game.skipIntro());
+      await host.evaluate(() => { window.__game.start(); window.__game.safetyOk(); window.__game.skipIntro(); });
+      await waitFor(host, () => ['notch', 'saw'].includes(window.__game.phase), { timeout: 120000, label: 'calibration done' });
       const s = await playTree(host, 'grandma');
       check(s.temper >= 75, `solo with Grandma: temper ${s.temper}, tantrums ${s.tantrums}`);
     }
@@ -175,9 +175,8 @@ async function run(name) {
       const pa = await phone(linkA, 'good', 'phoneA(host home)', errors); pages.push(pa);
       const pb = await phone(guestLink, 'good', 'phoneB(guest home)', errors); pages.push(pb);
       await waitFor(host, () => window.__game?.canStart(), { label: 'both ready' });
-      await host.evaluate(() => window.__game.start());
-      await waitFor(host, () => window.__game.phase === 'intro', { timeout: 120000, label: 'calibration done' });
-      await host.evaluate(() => window.__game.skipIntro());
+      await host.evaluate(() => { window.__game.start(); window.__game.safetyOk(); window.__game.skipIntro(); });
+      await waitFor(host, () => ['notch', 'saw'].includes(window.__game.phase), { timeout: 120000, label: 'calibration done' });
       const s = await playTree(host, 'online');
       check(s.temper >= 70, `online duo: temper ${s.temper}, tantrums ${s.tantrums}`);
       const gv = await waitFor(guest, () => window.__guest.view?.phase === 'score' && 'score', { timeout: 3000, label: 'guest score' }).catch(() => guest.evaluate(() => window.__guest.view?.phase));

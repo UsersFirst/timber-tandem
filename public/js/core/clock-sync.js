@@ -17,12 +17,33 @@ export class ClockSync {
     this.offset = 0;
     this.rtt = NaN;
     this.synced = false;
+    this.disagree = 0;
+    /** @type {string|undefined} */
+    this.boot = undefined;
   }
 
-  /** @param {number} c0 @param {number} h @param {number} c1 */
-  add(c0, h, c1) {
+  reset() {
+    this.samples = [];
+    this.offset = 0;
+    this.rtt = NaN;
+    this.synced = false;
+    this.disagree = 0;
+  }
+
+  /**
+   * @param {number} c0 @param {number} h @param {number} c1
+   * @param {string} [boot] the host's page-load id: a new one means a new clock
+   */
+  add(c0, h, c1, boot) {
     const rtt = c1 - c0;
     if (!(rtt >= 0) || rtt > 5000) return;
+    if (boot !== undefined && boot !== this.boot) { this.reset(); this.boot = boot; }
+    // Three answers in a row that disagree with the estimate: the host's clock
+    // jumped (a reload) or ours did (a phone asleep). Start over.
+    const off = h - (c0 + c1) / 2;
+    if (this.synced && Math.abs(off - this.offset) > Math.max(2 * rtt, 50)) {
+      if (++this.disagree >= 3) this.reset();
+    } else this.disagree = 0;
     this.samples.push({ rtt, offset: h - (c0 + c1) / 2 });
     if (this.samples.length > this.keep) this.samples.shift();
     const best = [...this.samples].sort((a, b) => a.rtt - b.rtt).slice(0, Math.max(3, Math.ceil(this.samples.length / 3)));

@@ -18,14 +18,15 @@ export const CHOP = Object.freeze({
   /** Rotation rate (deg/s) that starts a swing, at least. */
   MIN_START: 150,
   /** …or this share of the calibrated peak. */
-  START_FRAC: 0.45,
+  START_FRAC: 0.3,
   /** The hit lands when the rate drops below this share of the swing's peak. */
   LAND_FRAC: 0.4,
   REFRACTORY_MS: 250,
   /** A swing the other way this soon after a hit is the recoil. */
   RECOIL_MS: 450,
-  /** Below this share of the calibrated peak = a soft (glancing) hit. */
-  SOFT_FRAC: 0.6,
+  /** Below this share of the calibrated peak = a soft (glancing) hit. Low,
+   *  so small chops never glance just because calibration was big. */
+  SOFT_FRAC: 0.4,
   /** Calibrated peak used before calibration. */
   DEFAULT_PEAK: 400,
   /** Swings that never land within this long are dropped (a wave, not a chop). */
@@ -73,7 +74,10 @@ export class HatchetDetector {
     const sw = this.swing;
     if (m > sw.peak) { sw.peak = m; sw.peakAxis = norm(s.r); }
     if (s.t - sw.start > CHOP.MAX_SWING_MS) { this.swing = null; return null; }
-    if (m >= CHOP.LAND_FRAC * sw.peak) return null;
+    // Landing: the spin about the swing's own axis drops (a bounce back the
+    // other way counts as stopped, it doesn't hold the hit open).
+    const along = dot(s.r, sw.peakAxis);
+    if (along >= CHOP.LAND_FRAC * sw.peak) return null;
     this.swing = null;
     this.lastHitT = s.t;
     this.lastAxis = sw.peakAxis;

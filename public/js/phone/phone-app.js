@@ -33,7 +33,12 @@ const ui = {
   touchBtn: /** @type {HTMLButtonElement} */ ($('use-touch')),
   pad: $('pad'),
   status: $('status'),
+  action: /** @type {HTMLButtonElement} */ ($('action')),
 };
+ui.action.addEventListener('click', () => {
+  app.relay?.send({ t: app.mode === 'safety' ? 'ok' : 'next' });
+  buzz(15);
+});
 
 const pair = parsePairFragment(location.hash);
 const app = {
@@ -44,7 +49,8 @@ const app = {
   clock: new ClockSync(),
   tracker: new StrokeTracker(),
   hatchet: new HatchetDetector({ peak: CHOP.DEFAULT_PEAK }),
-  profile: { ...defaultProfile(), chopPeak: CHOP.DEFAULT_PEAK },
+  /** @type {import('../core/stroke-tracker.js').StrokeProfile & {chopPeak:number, pullDir?: import('../core/vec.js').Vec3|null}} */
+  profile: { ...defaultProfile(), chopPeak: CHOP.DEFAULT_PEAK, pullDir: null },
   /** @type {'motion'|'touch'|null} */
   input: null,
   seq: 0,
@@ -74,6 +80,7 @@ if (!pair) {
   setScreen('Scan the code on the TV', 'This page needs the link from the QR code.');
   ui.start.hidden = true;
 } else {
+  restoreProfile();
   connect();
 }
 
@@ -85,7 +92,12 @@ function connect() {
     base: params.get('relay') || undefined,
     onState: (s, info) => {
       if (s === 'open') ui.status.textContent = 'Connected';
-      else if (s === 'refused') { ui.status.textContent = info?.code === 4001 ? 'A new link replaced this one — scan again' : 'This link has expired — scan the TV again'; }
+      else if (s === 'refused') {
+        ui.status.textContent = info?.code === 4001 ? 'A new link replaced this one — scan again'
+          : info?.code === 4002 ? 'Another phone took this handle'
+          : 'This link has expired — scan the TV again';
+        setScreen(info?.code === 4002 ? 'Another phone took this handle' : 'Scan the TV again', 'Each handle needs its own phone.');
+      }
       else if (s === 'closed') ui.status.textContent = 'Reconnecting…';
     },
     onJson: onHostMessage,
@@ -110,13 +122,15 @@ function onHostMessage(m) {
   if (!m || typeof m !== 'object') return;
   switch (m.t) {
     case 'host-ready':
+      // The host may have reloaded: its clock started over.
+      app.clock.reset();
       sendHello();
       break;
     case 'host-left':
       ui.status.textContent = 'The TV went away — waiting…';
       break;
     case 'pong':
-      app.clock.add(m.c0, m.h, performance.now());
+      app.clock.add(m.c0, m.h, performance.now(), m.hb);
       break;
     case 'seat':
       ui.root.style.setProperty('--seat', m.color || '#e8743b');
@@ -235,7 +249,7 @@ function onMotion(m) {
   if (app.mode === 'chop' || app.mode === 'calib-chop') {
     const hit = app.hatchet.push({ t: m.t, r: m.r });
     if (hit) {
-      if (app.mode === 'calib-chop') app.calib.chops.push(hit.peak);
+      if (app.mode === 'calib-chop') { app.calib.chops.push(hit.peak); app.relay.send({ t: 'calib-progress', step: 'chop', n: app.calib.chops.length, of: 3 }); }
       else sendHit(hit.t, hit.grade, hit.peak, hit.axis);
     }
   }
@@ -265,10 +279,12 @@ function sendHit(t, grade, peak, axis) {
 
 /** @param {string} mode @param {any} info */
 function setMode(mode, info) {
+  const changed = mode !== app.mode;
   app.mode = mode;
   app.modeInfo = info || {};
-  app.sim?.setMode(mode, info);
-  if (mode.startsWith('calib-')) beginCalib(mode);
+  if (changed || info?.song) app.sim?.setMode(mode, info);
+  // The host re-sends the same mode (e.g. the saw step's click stage): keep going.
+  if (mode.startsWith('calib-') && changed) beginCalib(mode);
   const text = {
     lobby: ['Look at the TV', 'Waiting for everyone.'],
     'calib-rest': ['Hold still', 'Firm fist, phone like a saw handle.'],
@@ -276,12 +292,17 @@ function setMode(mode, info) {
     'calib-saw': ['Saw the air', 'Small smooth strokes. Pull, then let go.'],
     'calib-twist': ['Twist your fist →', 'Toward the right side of the TV.'],
     'calib-chop': ['Three small chops', 'Below your shoulders. Wrist and forearm.'],
+    safety: ['Safety first', 'Read the card on the TV, then tap Got it.'],
+    between: ['Timber!', 'Tap for one more tree.'],
     saw: ['Saw!', 'Pull to you, let your partner pull it back.'],
     chop: ['Chop on your turn', 'Your side glows on the TV.'],
     idle: ['Look at the TV', ''],
   }[mode] || ['Look at the TV', ''];
   if (app.input !== 'touch') setScreen(text[0], text[1]);
   ui.root.dataset.mode = mode;
+  // Between trees and on the safety card the phone is face-up: one big button.
+  ui.action.hidden = !(mode === 'safety' || mode === 'between');
+  ui.action.textContent = mode === 'safety' ? 'Got it' : 'One more tree';
 }
 
 /** @param {string} mode */
@@ -289,6 +310,10 @@ function beginCalib(mode) {
   const c = app.calib;
   c.step = mode;
   c.t0 = performance.now();
+  c.reported = '';
+  c.tempoSent = false;
+  c.lastRevN = -1;
+  c.lastMove = 0;
   if (app.input === 'touch') return reportCalib(mode.slice(6), true, { touch: true });
   if (mode === 'calib-rest') { c.gs = []; c.quiet = 0; }
   if (mode === 'calib-pull') { c.pull = []; }
@@ -312,8 +337,11 @@ function calibrate(m) {
     }
   } else if (mode === 'calib-pull') {
     c.pull.push({ t: m.t, a: m.a });
+    const moving = Math.hypot(...m.a) > 0.5;
+    if (moving) c.lastMove = m.t;
     const moved = c.pull.some((s) => Math.hypot(...s.a) > 1.2);
-    if (moved && since > 900) {
+    // The pull is over when the hand has been still for 350 ms after moving.
+    if (moved && m.t - (c.lastMove || m.t) > 350) {
       const d = pullDirection(c.pull);
       if (d) { app.profile.pullDir = d; reportCalib('pull', true); }
     }
@@ -331,7 +359,11 @@ function calibrate(m) {
           app.relay.send({ t: 'calib', step: 'saw-axis', ok: ax.quality > 0.5, quality: Math.round(ax.quality * 100) / 100 });
         }
       }
-    } else if (app.tracker.reversals.length >= 6 && !c.tempoSent) {
+    } else if (app.tracker.reversals.length !== c.lastRevN && !c.tempoSent) {
+      c.lastRevN = app.tracker.reversals.length;
+      app.relay.send({ t: 'calib-progress', step: 'saw', n: Math.min(6, c.lastRevN), of: 6 });
+    }
+    if (c.axisSet && app.tracker.reversals.length >= 6 && !c.tempoSent) {
       c.tempoSent = true;
       app.relay.send({ t: 'calib', step: 'saw-tempo', ok: true, bpm: Math.round(tempoOf(app.tracker.reversals.slice(1)) || 96), halfTravel: Math.round(app.tracker.halfTravel * 1000) / 1000 });
     }
@@ -355,7 +387,11 @@ function calibrate(m) {
 
 function reportCalib(step, ok, extra = {}) {
   app.calib.reported = 'calib-' + step;
-  if (step === 'chop') app.calib.done = true;
+  if (step === 'chop') {
+    app.calib.done = true;
+    app.profile.halfTravel = app.tracker.halfTravel;
+    saveProfile();
+  }
   app.relay.send({ t: 'calib', step, ok, ...extra });
   if (ok) buzz(15);
 }
@@ -364,6 +400,25 @@ function reportCalib(step, ok, extra = {}) {
 function cue(kind) {
   const pattern = { bite: 8, tantrum: [40, 30, 60], turn: 25, timber: [80, 40, 120], ok: 15 }[kind];
   if (pattern) buzz(pattern);
+}
+
+const PROFILE_KEY = pair ? `timber.profile.${pair.code}.${pair.seat}` : '';
+
+/** Keep this phone's calibration if the page reloads (iOS drops background tabs). */
+function saveProfile() {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(app.profile)); } catch { /* blocked */ }
+}
+
+function restoreProfile() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+    if (p && Array.isArray(p.axis)) {
+      app.profile = p;
+      app.tracker.setProfile({ ...app.tracker.profile, ...p });
+      app.hatchet = new HatchetDetector({ peak: p.chopPeak || CHOP.DEFAULT_PEAK });
+      app.calib.done = true;
+    }
+  } catch { /* blocked */ }
 }
 
 function setScreen(line, sub) {

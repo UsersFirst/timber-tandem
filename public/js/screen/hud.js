@@ -34,6 +34,8 @@ export class Hud {
     this.toastTimer = 0;
     /** A guest screen's own phone link for seat B. */
     this.guestLink = '';
+    /** Goose names by seat, from the view. */
+    this.names = { A: 'Sir Winston', B: 'Lady Victoria' };
     this._lastPhase = '';
     this.captionTimer = 0;
     document.addEventListener('click', (ev) => {
@@ -47,7 +49,17 @@ export class Hud {
   /** @param {any} ev */
   event(ev) {
     switch (ev.k) {
-      case 'rev': this.revs.push({ seat: ev.seat, at: ev.at }); if (this.revs.length > 40) this.revs.shift(); break;
+      case 'rev':
+        // Only the pull end (the hand reaching the belly) marks the strip: in
+        // perfect alternation A's pull end and B's forward end coincide, and
+        // drawing both would read as "you both pulled at once".
+        if (ev.end === 1) { this.revs.push({ seat: ev.seat, at: ev.at }); if (this.revs.length > 40) this.revs.shift(); }
+        break;
+      case 'turn': {
+        const name = this.names[ev.seat] || ev.seat;
+        this.toast(name + ' — chop!', 'turn', COLOR[ev.seat]);
+        break;
+      }
       case 'bite': this.flash.bite = 1; break;
       case 'tantrum':
         this.flash.tantrum = 1;
@@ -69,17 +81,18 @@ export class Hud {
       case 'hit':
         if (ev.result === 'chip') this.toast('chip — not your turn', 'soft');
         if (ev.result === 'clang') this.toast('CLANG!', 'bad');
-        if (ev.result === 'glance') this.toast('glancing — firmer', 'soft');
+        if (ev.result === 'glance') this.toast('glancing — chop right on the glowing face', 'soft');
         break;
       case 'paused': $('paused').hidden = !ev.on; break;
       default:
     }
   }
 
-  /** @param {string} text @param {'bad'|'soft'|'big'|'title'} kind */
-  toast(text, kind) {
+  /** @param {string} text @param {'bad'|'soft'|'big'|'title'|'turn'} kind @param {string} [color] */
+  toast(text, kind, color) {
     const el = $('toast');
     el.textContent = text;
+    el.style.color = color || '';
     el.className = 'toast show ' + kind;
     clearTimeout(this.toastTimer);
     this.toastTimer = /** @type {any} */ (setTimeout(() => { el.className = 'toast ' + kind; }, kind === 'big' ? 2200 : kind === 'title' ? 1800 : 1100));
@@ -107,9 +120,13 @@ export class Hud {
   /** @param {any} v the view @param {number} nowH host-clock now @param {number} dtMs */
   frame(v, nowH, dtMs) {
     if (!v || !v.phase) return;
+    for (const s of v.seats || []) this.names[s.id] = s.name;
+    $('safety').hidden = v.phase !== 'safety';
+    /** @type {any} */ ($('safety-ok')).hidden = this.role !== 'host';
     const playing = v.phase === 'notch' || v.phase === 'saw' || v.phase === 'notch-done';
     $('hud').hidden = !(playing || v.phase === 'fall');
-    /** @type {HTMLElement} */ (document.querySelector('.bottom .gauge')).style.visibility = v.phase === 'fall' ? 'hidden' : 'visible';
+    const falling = v.phase === 'fall';
+    for (const sel of ['.bottom', '.dial', '.temper']) /** @type {HTMLElement} */ (document.querySelector(sel)).style.visibility = falling ? 'hidden' : 'visible';
     if (v.phase === 'lobby' && v.lobby) this.renderLobby(v.lobby);
     $('lobby').hidden = v.phase !== 'lobby';
     if (v.phase === 'calibrate' && v.calib) this.renderCalib(v.calib);
@@ -121,14 +138,14 @@ export class Hud {
     $('temper').textContent = String(v.temper);
     /** @type {HTMLElement} */ ($('temper-bar')).style.width = v.temper + '%';
     $('tantrums').textContent = String(v.tantrums);
-    $('streak').textContent = v.streak > 2 ? `${v.streak} in a row` : '';
-    /** @type {HTMLElement} */ ($('cut-fill')).style.height = Math.round(v.cutFrac * 100) + '%';
+    $('streak').textContent = v.streak > 2 ? `${v.streak} clean strokes in a row` : '';
+    /** @type {HTMLElement} */ ($('cut-fill')).style.height = Math.round((v.phase === 'notch' || v.phase === 'notch-done' ? v.notchFrac : v.cutFrac) * 100) + '%';
     $('cut-label').textContent = v.phase === 'notch' ? `notch ${Math.round(v.notchFrac * 100)}%` : `${v.bites}/${v.bitesNeeded}`;
     $('turn').textContent = v.phase === 'notch' && v.litFace ? `${v.seats.find((s) => s.id === v.litFace)?.name}’s turn` : '';
     /** @type {HTMLElement} */ ($('turn')).style.color = v.litFace ? COLOR[v.litFace] : '';
 
     for (const k of /** @type {const} */ (['A', 'B', 'bite', 'tantrum'])) this.flash[k] = Math.max(0, this.flash[k] - dtMs / 450);
-    /** @type {HTMLElement} */ ($('beats')).style.visibility = v.phase === 'saw' ? 'visible' : 'hidden';
+    /** @type {HTMLElement} */ ($('beats')).style.visibility = v.phase === 'saw' && !v.silentSong ? 'visible' : 'hidden';
     if (v.phase === 'saw') this.drawBlade(v); else this.drawNotch(v);
     this.drawBeats(v, nowH);
     this.drawDial(v);
@@ -164,13 +181,19 @@ export class Hud {
     g.setLineDash([]);
     g.restore();
 
+    // Tension: the blade is pulled thin and red stops appear at both ends.
+    const tension = e > 0 ? Math.min(1, e / SAW.RED) : 0;
+    // The bow peaks toward the hand that's making it worse (PLAN §4.3).
+    const peakAt = v.blame === 'A' ? 0.3 : v.blame === 'B' ? 0.7 : 0.5;
     // The blade: a steel band with teeth on the bottom edge.
     g.save();
     g.translate(0, buzz);
     const steps = 40;
-    const yAt = (i) => midY - Math.sin((Math.PI * i) / steps) * bow;
+    const bowShape = (u) => (u <= peakAt ? Math.sin((Math.PI / 2) * (u / peakAt)) : Math.sin((Math.PI / 2) * ((1 - u) / (1 - peakAt))));
+    const yAt = (i) => midY - bowShape(i / steps) * bow;
+    const thick = (1 - 0.55 * tension) * 7 * k;
     g.beginPath();
-    for (let i = 0; i <= steps; i++) g.lineTo(x0 + (bladeLen * i) / steps, yAt(i) - 7 * k);
+    for (let i = 0; i <= steps; i++) g.lineTo(x0 + (bladeLen * i) / steps, yAt(i) - thick);
     for (let i = steps; i >= 0; i--) {
       const x = x0 + (bladeLen * i) / steps;
       const tooth = i % 2 === 0 ? 9 * k : 4 * k;
@@ -186,12 +209,18 @@ export class Hud {
     g.globalAlpha = 0.55 + 0.45 * Math.min(1, Math.abs(e) / SAW.GREEN);
     g.stroke();
     g.restore();
+    if (tension > 0.3) {
+      g.fillStyle = '#ff5a4a';
+      g.globalAlpha = Math.min(1, (tension - 0.3) * 2);
+      for (const x of [x0 + 6 * k, x1 - 10 * k]) g.fillRect(x, midY - 20 * k, 4 * k, 40 * k);
+      g.globalAlpha = 1;
+    }
 
     // Handles.
     for (const id of /** @type {const} */ (['A', 'B'])) {
       const x = id === 'A' ? x0 : x1;
       const y = midY - 0;
-      const glow = this.flash[id] + (v.blame === id ? 0.7 : 0);
+      const glow = this.flash[id];
       g.save();
       if (glow > 0) { g.shadowColor = '#ff5a4a'; g.shadowBlur = 26 * k * Math.min(1, glow); }
       g.fillStyle = COLOR[id];
@@ -199,17 +228,19 @@ export class Hud {
       g.fill();
       g.restore();
       g.fillStyle = '#1b1410';
-      g.font = `700 ${14 * k}px system-ui, sans-serif`;
+      g.font = `800 ${24 * k}px Georgia, serif`;
       g.textAlign = 'center';
-      g.fillText(id, x + (id === 'A' ? -23 * k : 23 * k), y + 5 * k);
+      g.fillText((this.names[id] || id).replace(/^(Sir|Lady) /, '')[0], x + (id === 'A' ? -23 * k : 23 * k), y + 9 * k);
     }
 
-    // Labels.
-    g.font = `600 ${12 * k}px system-ui, sans-serif`;
-    g.textAlign = 'left';
-    g.fillStyle = 'rgba(255,255,255,.7)';
-    const label = v.zone === 'green' ? (v.streak > 2 ? 'singing' : 'in rhythm') : e < 0 ? 'PUSH — let it go' : 'TUG — both pulling';
-    g.fillText(label, x0, H - 6 * k);
+    // The word that matters, big enough for the couch.
+    const label = v.zone === 'green' ? (v.streak > 2 ? 'singing' : '') : e < 0 ? 'PUSH — let it go' : 'TUG — both pulling';
+    if (label) {
+      g.font = `800 ${v.zone === 'green' ? 20 * k : 30 * k}px system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.fillStyle = v.zone === 'green' ? 'rgba(126,224,138,.9)' : zoneCol;
+      g.fillText(label, W / 2, H - 4 * k);
+    }
     if (this.flash.bite > 0) {
       g.globalAlpha = this.flash.bite;
       g.fillStyle = '#f6d28b';
@@ -264,16 +295,18 @@ export class Hud {
     if (!v.song) return;
     const k = devicePixelRatio;
     const beatMs = 60000 / v.song.bpm;
-    const nowX = W * 0.25, pxPerMs = (W * 0.7) / (4 * beatMs);
+    const gutter = W * 0.15; // lane names live here
+    const nowX = gutter + W * 0.12, pxPerMs = (W * 0.7) / (4 * beatMs);
     const bp = (nowH - v.song.startH) / beatMs;
     const lane = { A: H * 0.32, B: H * 0.72 };
     g.strokeStyle = 'rgba(255,255,255,.15)';
     g.lineWidth = 1 * k;
-    for (const id of /** @type {const} */ (['A', 'B'])) line(g, 0, lane[id], W, lane[id]);
+    for (const id of /** @type {const} */ (['A', 'B'])) line(g, gutter, lane[id], W, lane[id]);
     // Target beats: A's pull lands on odd beats (s* = +1), B's on even.
     for (let b = Math.floor(bp) - 2; b <= Math.ceil(bp) + 5; b++) {
       if (b < 0) continue;
       const x = nowX + (b - bp) * beatMs * pxPerMs;
+      if (x < gutter) continue;
       const id = b % 2 === 1 ? 'A' : 'B';
       g.fillStyle = COLOR[id];
       g.globalAlpha = b < bp ? 0.25 : 0.9;
@@ -283,13 +316,21 @@ export class Hud {
     // Actual pull ends from each handle.
     for (const r of this.revs) {
       const x = nowX + (r.at - nowH) * pxPerMs;
-      if (x < -20 || x > W) continue;
+      if (x < gutter || x > W) continue;
       g.strokeStyle = '#fff';
       g.lineWidth = 2.5 * k;
       g.beginPath(); g.arc(x, lane[r.seat], 13 * k, 0, Math.PI * 2); g.stroke();
     }
     g.fillStyle = 'rgba(255,255,255,.85)';
     g.fillRect(nowX - 1.5 * k, 4 * k, 3 * k, H - 8 * k);
+    g.font = `700 ${14 * k}px system-ui, sans-serif`;
+    g.textAlign = 'right';
+    g.textBaseline = 'middle';
+    for (const id of /** @type {const} */ (['A', 'B'])) {
+      g.fillStyle = COLOR[id];
+      g.fillText(this.names[id] || id, gutter - 8 * k, lane[id]);
+    }
+    g.textBaseline = 'alphabetic';
   }
 
   drawDial(v) {
@@ -354,9 +395,10 @@ export class Hud {
     $('calib-text').textContent = c.text;
     document.documentElement.dataset.calib = c.step;
     $('calib-seats').innerHTML = c.seats.map((s) => {
-      const mark = { ok: '✓', fail: '⚠︎ using a default', wait: '…', skip: '—', 'n/a': '—' }[s.status] || '…';
+      const mark = { ok: '✓', fail: '⚠︎ using a default', wait: s.progress ? esc(s.progress) : 'watching…', skip: '—', 'n/a': '—' }[s.status] || '…';
       return `<div class="calib-seat" style="--seat:${COLOR[s.id]}"><span class="dot"></span>${esc(s.name)} <b>${mark}</b></div>`;
     }).join('');
+    $('calib-left').textContent = c.seats.some((s) => s.status === 'wait') ? `moving on in ${c.left} s` : '';
     $('calib-skip').hidden = this.role !== 'host';
   }
 
@@ -364,23 +406,27 @@ export class Hud {
 
   showScore(s, last) {
     const grade = { skid: 'Right on the skid', close: 'Close to the skid', wide: 'Wide of the skid', privy: 'On Grandma’s privy' }[s.landing.grade];
+    const off = Math.round(s.landing.offDeg);
     $('score-title').textContent = `${s.tree} — down!`;
     $('score-body').innerHTML = `
       <div class="score-big">TEMPER <b>${s.temper}</b> · TANTRUMS <b>${s.tantrums}</b></div>
       <div class="score-stats">
-        <uf-stat variant="card" value="${'★'.repeat(s.landing.stars)}${'☆'.repeat(3 - s.landing.stars)}" label="${grade}" tone="gold"></uf-stat>
+        <uf-stat variant="card" value="${off}°" label="${grade}" detail="off the skid" tone="gold"></uf-stat>
         <uf-stat variant="card" value="${s.bestStreak}" label="Best run of clean strokes"></uf-stat>
         <uf-stat variant="card" value="${s.fallDeg}°" label="Fell (target ${s.targetDeg}°)"></uf-stat>
       </div>`;
     const btn = /** @type {any} */ ($('score-next'));
-    btn.label = last ? 'Finish' : 'Next tree';
+    btn.label = last ? 'One more tree' : 'Next tree';
+    btn.setAttribute('data-action', last ? 'more' : 'next');
     btn.hidden = this.role !== 'host';
+    /** @type {any} */ ($('score-finish')).hidden = this.role !== 'host' || !last;
     $('score').hidden = false;
   }
 
   showEnd(scores) {
-    $('end-body').innerHTML = scores.map((s) => `<div class="end-row"><b>${esc(s.tree)}</b> TEMPER ${s.temper} · TANTRUMS ${s.tantrums} · ${'★'.repeat(s.landing.stars)}</div>`).join('');
+    $('end-body').innerHTML = scores.map((s) => `<div class="end-row"><b>${esc(s.tree)}</b> TEMPER ${s.temper} · TANTRUMS ${s.tantrums} · ${Math.round(s.landing.offDeg)}° off the skid</div>`).join('');
     /** @type {any} */ ($('end-again')).hidden = this.role !== 'host';
+    /** @type {any} */ ($('end-more')).hidden = this.role !== 'host';
     $('score').hidden = true;
     $('end').hidden = false;
   }

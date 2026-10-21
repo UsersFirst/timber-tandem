@@ -22,6 +22,8 @@
   #sub { font-size: 18px; opacity: .8; max-width: 22em; margin: 0 auto; line-height: 1.35; }
   #start { margin-top: 10px; font-size: 22px; font-weight: 800; padding: 18px 28px; border-radius: 999px; border: 0; background: var(--seat); color: #1b1410; }
   #start:disabled { opacity: .6; }
+  #action { margin-top: 10px; font-size: 26px; font-weight: 800; padding: 22px 34px; border-radius: 999px; border: 0; background: var(--seat); color: #1b1410; }
+  html[data-mode="between"] main, html[data-mode="safety"] main { opacity: 1; }
   #use-touch { background: none; border: 0; color: inherit; opacity: .7; text-decoration: underline; font-size: 15px; padding: 10px; }
   #pad { position: fixed; inset: 30% 16px max(70px, env(safe-area-inset-bottom)); border-radius: 28px; border: 3px dashed color-mix(in srgb, var(--seat) 70%, transparent); display: grid; place-content: center; font-size: 22px; font-weight: 700; color: var(--seat); }
   #pad.held { background: color-mix(in srgb, var(--seat) 35%, transparent); border-style: solid; }
@@ -38,6 +40,7 @@
     <div id="sub"></div>
     <div><button id="start" type="button">Pick up the saw</button></div>
     <div><button id="use-touch" type="button">No motion? Saw by touch</button></div>
+    <div><button id="action" type="button" hidden>Got it</button></div>
   </main>
   <div id="pad" hidden>Hold to pull</div>
   <footer><span id="status">…</span><span>Timber Tandem</span></footer>

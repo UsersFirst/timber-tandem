@@ -12,8 +12,10 @@
 export const MAX_FALL_DEG = 25;
 
 export const TREES = Object.freeze([
-  { id: 'small', kind: 'small', name: 'Small pine', bites: 14, notchSteps: 6, targetDeg: 8 },
-  { id: 'big', kind: 'big', name: 'Big pine', bites: 24, notchSteps: 8, targetDeg: -12 },
+  // A clean pair takes ~25 s / ~40 s of back cut at 96 BPM; real pairs bind
+  // and tantrum along the way, landing near the plan's 60–90 s (PLAN §13.2).
+  { id: 'small', kind: 'small', name: 'Small pine', bites: 40, notchSteps: 6, targetDeg: 8 },
+  { id: 'big', kind: 'big', name: 'Big pine', bites: 64, notchSteps: 8, targetDeg: -12 },
 ]);
 
 /** Past this, the tree lands on Grandma's privy (B's side, +x). */
@@ -25,6 +27,7 @@ export const PRIVY_DEG = 18;
  * @property {number} bites
  * @property {number} leanSum
  * @property {number} lean      live blade lean -1..1 (average of both twists)
+ * @property {number[]} [recent] lean at the last few bites
  */
 
 /** @param {number} needed @returns {CutState} */
@@ -45,14 +48,21 @@ export function cutBite(cut, lean) {
   if (cut.bites >= cut.needed) return true;
   cut.bites++;
   cut.leanSum += lean;
+  cut.recent = [...(cut.recent || []), lean].slice(-AIM_BITES);
   return cut.bites >= cut.needed;
 }
 
-/** Where the tree will fall if the cut finished now, degrees. Live preview blends in the current lean. */
+/** The fall follows the blade's lean as the cut nears the hinge: the last few bites. */
+export const AIM_BITES = 4;
+
+/**
+ * Where the tree will fall if the cut finished now, degrees: the lean over the
+ * last few bites plus the live lean, so a twist shows on the aim at once.
+ */
 export function fallAngle(cut, liveLean = cut.lean) {
-  const n = cut.bites;
-  const avg = n > 0 ? (cut.leanSum + liveLean) / (n + 1) : liveLean;
-  return avg * MAX_FALL_DEG;
+  const recent = cut.recent || [];
+  const all = [...recent, liveLean];
+  return (all.reduce((a, b) => a + b, 0) / all.length) * MAX_FALL_DEG;
 }
 
 /** @param {CutState} cut */
@@ -60,12 +70,12 @@ export const cutFrac = (cut) => Math.min(1, cut.bites / cut.needed);
 
 /**
  * @param {number} angleDeg @param {number} targetDeg
- * @returns {{grade:'skid'|'close'|'wide'|'privy', offDeg:number, stars:number}}
+ * @returns {{grade:'skid'|'close'|'wide'|'privy', offDeg:number}}
  */
 export function landing(angleDeg, targetDeg) {
   const off = Math.abs(angleDeg - targetDeg);
-  if (angleDeg >= PRIVY_DEG && targetDeg < PRIVY_DEG - 6) return { grade: 'privy', offDeg: off, stars: 1 };
-  if (off <= 4) return { grade: 'skid', offDeg: off, stars: 3 };
-  if (off <= 10) return { grade: 'close', offDeg: off, stars: 2 };
-  return { grade: 'wide', offDeg: off, stars: 1 };
+  if (angleDeg >= PRIVY_DEG && targetDeg < PRIVY_DEG - 6) return { grade: 'privy', offDeg: off };
+  if (off <= 4) return { grade: 'skid', offDeg: off };
+  if (off <= 10) return { grade: 'close', offDeg: off };
+  return { grade: 'wide', offDeg: off };
 }

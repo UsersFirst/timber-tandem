@@ -105,6 +105,7 @@ export async function createScene(canvas, opts = {}) {
   /** @param {'intro'|'notch'|'saw'|'wide'} mode */
   function setCamera(mode) {
     const c = CAMERAS[mode] || CAMERAS.saw;
+    const cut = mode === 'notch' || cam.mode === 'notch';
     cam.mode = mode;
     camGoal.pos.set(c.pos[0], c.pos[1], c.pos[2]);
     camGoal.at.set(c.at[0], c.at[1], c.at[2]);
@@ -121,6 +122,15 @@ export async function createScene(canvas, opts = {}) {
       camGoal.at.copy(mid).add(new THREE.Vector3(0, H * 0.22, 0));
       camGoal.fov = 50;
     }
+    // The notch is on the far (−z) face, so its camera looks back toward the
+    // couch. Cut to it (no swing) and mirror the picture, so Sir Winston
+    // (orange, seat A) stays on screen-left in every shot.
+    if (cut) {
+      cam.pos.copy(camGoal.pos);
+      cam.at.copy(camGoal.at);
+      cam.fov = camGoal.fov;
+    }
+    canvas.style.transform = mode === 'notch' ? 'scaleX(-1)' : '';
   }
 
   // ---- per-goose state ----
@@ -448,4 +458,5 @@ export async function createScene(canvas, opts = {}) {
  * @property {(w: number, h: number) => void} resize
  * @property {{drawCalls: number, triangles: number}} info
  * @property {() => void} dispose
+ * @property {any} [_debug]  dev tools and smokes only
  */

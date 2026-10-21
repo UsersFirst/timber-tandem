@@ -106,6 +106,9 @@ function hostAction(game, a, arg) {
     case 'invite': game.openInvite(!game.inviteOpen); game.refreshLinks(); break;
     case 'keys': game.setKind(arg, 'keys'); break;
     case 'next': game.next(); break;
+    case 'more': game.more(); break;
+    case 'finish': game.finish(); break;
+    case 'safety-ok': game.safetyOk(); break;
     case 'again': game.toLobby(); break;
     case 'skip-calib': game.skipCalibration(); break;
     case 'skip-intro': game.skipIntro(); break;
@@ -126,6 +129,7 @@ function bindKeys(game) {
     if (m) { game.key(m[0], m[1], down); ev.preventDefault(); }
     if (down && (ev.code === 'Enter' || ev.code === 'Space')) {
       if (game.phase === 'lobby') game.start();
+      else if (game.phase === 'safety') game.safetyOk();
       else if (game.phase === 'score' || game.phase === 'end') game.next();
       else if (game.phase === 'intro') game.skipIntro();
     }
@@ -153,21 +157,27 @@ async function startGuest(codeIn) {
   const relay = new RelayClient({
     code, role: 'screen', id, base: params.get('relay') || undefined,
     onState: (s, info) => {
-      $('net').textContent = s === 'open' ? '' : s === 'refused' ? 'Couldn’t join that home — check the code.' : 'Connecting to the other home…';
+      $('net').textContent = s === 'open' ? '' : s === 'refused'
+        ? (info?.code === 404 ? 'No game with that code — check it.' : info?.code === 403 ? 'That home hasn’t opened an invite (or removed this screen).' : 'Couldn’t join that home.')
+        : 'Connecting to the other home…';
       void info;
     },
     onJson: (m) => {
       switch (m.t) {
-        case 'pong': clock.add(m.c0, m.h, performance.now()); break;
+        case 'pong': clock.add(m.c0, m.h, performance.now(), m.hb); break;
+        case 'host-ready': clock.reset(); break;
         case 'welcome':
           presenter?.event({ k: 'cast', cast: m.cast });
+          if (m.tree) presenter?.event({ k: 'tree', def: m.tree, name: '' });
+          if (m.camera) presenter?.event({ k: 'camera', mode: m.camera });
           if (m.song) early.push({ k: 'song', ...m.song });
           break;
         case 'pair': if (presenter) presenter.hud.guestLink = m.link; presenter && (presenter.hud.lastLobby = ''); break;
         case 'state': view = m.v; break;
         case 'ev':
-          // Song/click times need the clock; hold them until it's synced.
-          if (!clock.synced && (m.ev.k === 'song' || m.ev.k === 'clicks')) early.push(m.ev);
+          // Until the clock is synced, hold every event (in order), so a
+          // song-stop can never overtake the song it stops.
+          if (!clock.synced || early.length) early.push(m.ev);
           else presenter?.event(m.ev);
           break;
         case 'host-left': $('net').textContent = 'The other home’s screen went away — waiting…'; break;

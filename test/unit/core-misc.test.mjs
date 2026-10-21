@@ -33,7 +33,7 @@ test('hatchet: one hit per chop, recoil ignored', () => {
 test('hatchet: soft taps glance, wind-ups score the same as good', () => {
   const d = new HatchetDetector({ peak: 400 });
   const grades = [];
-  for (const s of [...chop(0, 210), ...chop(800, 700)]) { const h = d.push(s); if (h) grades.push(h.grade); }
+  for (const s of [...chop(0, 155), ...chop(800, 700)]) { const h = d.push(s); if (h) grades.push(h.grade); }
   assert.deepEqual(grades, ['soft', 'strong']);
   assert.ok(CHOP.SOFT_FRAC < 1);
 });
@@ -62,9 +62,12 @@ test('notch: alternating turns, out-of-turn chips, soft glances, clang', () => {
 test('steering: average of both twists; opposite twists cancel', () => {
   assert.equal(bladeLean(1, 1), 1);
   assert.equal(bladeLean(1, -1), 0);
-  const cut = createCut(4);
+  const cut = createCut(20);
   for (let i = 0; i < 4; i++) cutBite(cut, 0.4);
   assert.ok(Math.abs(fallAngle(cut, 0.4) - 0.4 * MAX_FALL_DEG) < 1e-9);
+  // Only the last few bites aim the fall: a late twist counts.
+  for (let i = 0; i < 6; i++) cutBite(cut, -0.6);
+  assert.ok(Math.abs(fallAngle(cut, -0.6) + 0.6 * MAX_FALL_DEG) < 1e-9);
 });
 
 test('landing grades', () => {
@@ -105,4 +108,31 @@ test('calibration helpers', () => {
   assert.equal(chopPeak([300, 500, 420]), 420);
   assert.equal(songTempo([70, 75]), 80);
   assert.equal(songTempo([]), 96);
+});
+
+test('pull calibration: reaching forward first still finds the pull (review #2)', () => {
+  const s = [];
+  // reach +y for 450 ms (speed up then slow), pause, then pull -y for 900 ms
+  for (let t = 0; t < 2200; t += DT) {
+    let ay = 0;
+    if (t < 450) ay = 4 * Math.sin((2 * Math.PI * t) / 450);
+    else if (t > 800 && t < 1700) ay = -4 * Math.sin((2 * Math.PI * (t - 800)) / 900);
+    s.push({ t, a: [0, ay, 0] });
+  }
+  const d = pullDirection(s);
+  assert.ok(d && d[1] < -0.9, 'pull dir ' + JSON.stringify(d));
+});
+
+test('clock sync: a host reload (new boot id) resets the offset (review #3)', () => {
+  const cs = new ClockSync();
+  for (let i = 0; i < 8; i++) cs.add(i * 100, i * 100 + 20 + 500000, i * 100 + 40, 'boot1');
+  assert.ok(Math.abs(cs.offset - 500000) < 1);
+  for (let i = 0; i < 6; i++) cs.add(1000 + i * 100, 20 + i * 100, 1040 + i * 100, 'boot2');
+  assert.ok(Math.abs(cs.offset - (-1000)) < 1, 'offset ' + cs.offset);
+});
+
+test('notch: a late-arriving hit far apart in time is not a clang (review #11)', () => {
+  const st = createNotch(4, 'B');
+  notchHit(st, 'A', 1600, 'good'); // out of turn, arrives first
+  assert.equal(notchHit(st, 'B', 1300, 'good').kind, 'open');
 });

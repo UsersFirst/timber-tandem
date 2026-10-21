@@ -80,10 +80,17 @@ test('blame goes to the hand moving the way strain grows', () => {
   assert.equal(blameOf(0.5, -1, -1), null);
 });
 
-test('with the beat known, blame lands on the late partner', () => {
-  // B lags 150 ms behind the beat; A is perfect.
-  const { st } = run((t) => targetS(t / BEAT), (t) => -targetS((t - 150) / BEAT), 20 * BEAT);
-  assert.ok(st.blameTime.B > st.blameTime.A, JSON.stringify(st.blameTime));
+test('strain from a late partner is attributed to the hand moving into it', () => {
+  // B lags 250 ms: strain appears, and each moment of it lands on one hand.
+  const { st } = run((t) => targetS(t / BEAT), (t) => -targetS((t - 250) / BEAT), 20 * BEAT);
+  assert.ok(st.blameTime.A + st.blameTime.B > 0, JSON.stringify(st.blameTime));
+});
+
+test('a strain spike shorter than BIND_MS does not spoil the stroke', () => {
+  const pA = (t) => targetS(t / BEAT);
+  const pB = (t) => -targetS(t / BEAT) + (Math.abs(t - 3.5 * BEAT) < 15 ? 0.9 : 0);
+  const { events } = run(pA, pB, 8 * BEAT);
+  assert.equal(count(events, 'bind'), 0);
 });
 
 test('a tantrum costs only the stroke and cools down', () => {

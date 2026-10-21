@@ -70,7 +70,11 @@ export class Presenter {
         sc?.setCamera(ev.mode);
         break;
       case 'song':
-        if (a.ready) { a.startSong({ bpm: ev.bpm, startPerfMs: this.toLocal(ev.startH), countIn: 4 }); a.setIntensity(0); this.intensity = 0; }
+        if (a.ready && !ev.silent) { a.startSong({ bpm: ev.bpm, startPerfMs: this.toLocal(ev.startH), countIn: 4 }); a.setIntensity(0); this.intensity = 0; }
+        break;
+      case 'turn':
+        // The TV says whose turn it is, by ear: iPhones can't buzz from the web.
+        a.play('ui-ok', { pan: pan(ev.seat), gain: 0.8 });
         break;
       case 'song-stop':
         a.stopSong(900);
@@ -95,7 +99,7 @@ export class Presenter {
         sc?.fall(ev.angle).then(() => sc?.celebrate());
         break;
       case 'score':
-        for (let i = 0; i < ev.score.landing.stars; i++) setTimeout(() => a.play('star'), 400 + i * 350);
+        if (ev.score.landing.grade === 'skid') setTimeout(() => a.play('star'), 400);
         break;
       case 'caption':
         if (ev.who === 'Grandma' && /privy|Temper/.test(ev.text)) a.play('tut');
@@ -123,7 +127,7 @@ export class Presenter {
       const sawing = v.phase === 'saw' && !v.paused;
       this.audio.setSawVoice({ speed: sawing ? v.speed : 0, zone: v.zone, strainSign: Math.abs(v.e) < 0.05 ? 0 : v.e < 0 ? -1 : 1, streak: v.streak });
       const level = v.phase === 'saw' ? (v.streak >= 12 ? 3 : v.streak >= 7 ? 2 : v.streak >= 3 ? 1 : 0) : v.phase === 'notch' ? 1 : 0;
-      if (level !== this.intensity && v.song) { this.intensity = level; this.audio.setIntensity(/** @type {0|1|2|3} */ (level)); }
+      if (level !== this.intensity && v.song && !v.silentSong) { this.intensity = level; this.audio.setIntensity(/** @type {0|1|2|3} */ (level)); }
     }
     this.hud.frame(v, nowH, dt);
   }

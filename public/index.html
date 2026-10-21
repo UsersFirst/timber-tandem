@@ -85,7 +85,11 @@
   .temper .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; margin-top: 6px; }
   #temper-bar { height: 100%; background: linear-gradient(90deg, #f2b24c, var(--green)); width: 100%; transition: width .2s; }
   .temper .tan { font-size: 14px; margin-top: 6px; opacity: .85; }
-  #streak { font-size: 14px; color: #f6d28b; min-height: 1em; }
+  #streak { font-size: clamp(16px, 1.5vw, 22px); font-weight: 700; color: #f6d28b; min-height: 1em; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  #safety { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(760px, calc(100vw - 32px)); padding: 28px 34px; text-align: center; }
+  #safety ul { text-align: left; font-size: clamp(18px, 1.6vw, 24px); line-height: 1.5; margin: 18px auto; max-width: 30em; }
+  #calib-left { font-size: 14px; margin-bottom: 8px; min-height: 1em; }
+  .toast.turn { font-size: clamp(36px, 4.6vw, 70px); top: 30%; font-family: var(--serif); }
   .bottom { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(1100px, calc(100vw - 32px)); display: grid; grid-template-columns: 1fr 64px; gap: 14px; align-items: end; }
   .gauge { background: rgba(27,20,16,.72); border-radius: 20px; padding: 10px 14px 8px; }
   #blade { width: 100%; height: 120px; display: block; }
@@ -155,7 +159,7 @@
     <div id="lobby-seats"></div>
     <div id="lobby-invite"></div>
     <div class="lobby-foot">
-      <div class="tips muted">Clear some space. Small strokes work — nothing rewards big ones. Use the TV or laptop speakers (Bluetooth is too slow for the beat).</div>
+      <div class="tips muted">Use the TV or laptop speakers — Bluetooth is too slow for the beat.</div>
       <uf-button id="start-btn" data-action="start" label="Start" sub="Enter" variant="accent" size="lg" disabled></uf-button>
     </div>
   </div>
@@ -167,7 +171,22 @@
     <div class="calib-art"><div class="fist"></div></div>
     <div id="calib-text"></div>
     <div id="calib-seats"></div>
+    <div id="calib-left" class="muted"></div>
     <uf-button id="calib-skip" data-action="skip-calib" label="Skip" variant="ghost" size="sm"></uf-button>
+  </div>
+
+  <!-- First-run safety card (PLAN §6.5) -->
+  <div id="safety" class="panel" hidden>
+    <div class="logo"><span class="w1" style="font-size:44px">Before we saw</span></div>
+    <ul>
+      <li><b>Clear some space</b> — away from the TV, lamps and each other.</li>
+      <li><b>Firm fist</b> around the phone, or a case strap.</li>
+      <li><b>Small strokes work.</b> Nothing rewards big ones.</li>
+      <li><b>Small chops</b>, below your shoulders. Never overhead.</li>
+      <li>Play at your own risk; stop if anything hurts.</li>
+    </ul>
+    <div class="muted">Tap <b>Got it</b> on a phone, or press Enter.</div>
+    <uf-button id="safety-ok" data-action="safety-ok" label="Got it" variant="accent" size="lg"></uf-button>
   </div>
 
   <!-- In-game HUD -->
@@ -197,11 +216,11 @@
   <uf-sheet id="score" heading="" placement="center" size="lg" tone="gold" headline dismissible="false" hidden open>
     <div id="score-title" style="font-family:var(--serif);font-size:34px;text-align:center"></div>
     <div id="score-body"></div>
-    <div slot="actions"><uf-button id="score-next" data-action="next" label="Next tree" variant="accent" size="lg"></uf-button></div>
+    <div slot="actions"><uf-button id="score-finish" data-action="finish" label="Finish" variant="ghost" size="lg" hidden></uf-button><uf-button id="score-next" data-action="next" label="Next tree" variant="accent" size="lg"></uf-button></div>
   </uf-sheet>
   <uf-sheet id="end" heading="The woodpile’s started" placement="center" size="md" tone="gold" dismissible="false" hidden open>
     <div id="end-body"></div>
-    <div slot="actions"><uf-button id="end-again" data-action="again" label="Back to the lobby" variant="accent" size="lg"></uf-button></div>
+    <div slot="actions"><uf-button id="end-again" data-action="again" label="Back to the lobby" variant="ghost" size="lg"></uf-button><uf-button id="end-more" data-action="more" label="One more tree" variant="accent" size="lg"></uf-button></div>
   </uf-sheet>
 
   <script>if (new URLSearchParams(location.search).has('spike')) document.documentElement.dataset.spike = '1';</script>

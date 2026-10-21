@@ -32,15 +32,31 @@ export function restGravity(gs) {
  * @param {{t:number, a:Vec3}[]} samples  linear acceleration
  * @returns {Vec3|null}
  */
-export function pullDirection(samples, { onset = 1.2, windowMs = 250 } = {}) {
+export function pullDirection(samples, { onset = 1.2 } = {}) {
   const i0 = samples.findIndex((s) => len(s.a) >= onset);
   if (i0 < 0) return null;
-  const t0 = samples[i0].t;
-  const acc = [0, 0, 0];
-  for (let i = i0; i < samples.length && samples[i].t - t0 <= windowMs; i++) {
-    acc[0] += samples[i].a[0]; acc[1] += samples[i].a[1]; acc[2] += samples[i].a[2];
+  // Integrate velocity from the start of the motion, then take the direction
+  // of the LAST big velocity peak: the pull is the move that ends the
+  // gesture, even if someone reaches forward first.
+  /** @type {Vec3} */
+  const v = [0, 0, 0];
+  const vs = [];
+  for (let i = Math.max(1, i0); i < samples.length; i++) {
+    const dt = (samples[i].t - samples[i - 1].t) / 1000;
+    if (!(dt > 0) || dt > 0.25) continue;
+    v[0] += samples[i].a[0] * dt; v[1] += samples[i].a[1] * dt; v[2] += samples[i].a[2] * dt;
+    vs.push(/** @type {Vec3} */ ([v[0], v[1], v[2]]));
   }
-  const d = norm(/** @type {Vec3} */ (acc));
+  if (vs.length < 3) return null;
+  const mags = vs.map(len);
+  const max = Math.max(...mags);
+  if (max < 0.05) return null;
+  let pick = -1;
+  for (let i = 1; i < vs.length - 1; i++) {
+    if (mags[i] >= 0.5 * max && mags[i] >= mags[i - 1] && mags[i] >= mags[i + 1]) pick = i;
+  }
+  if (pick < 0) pick = mags.indexOf(max);
+  const d = norm(vs[pick]);
   return len(d) > 0.5 ? d : null;
 }
 

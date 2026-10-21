@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": false,
+    "skipLibCheck": true,
+    "types": [],
+    "paths": { "three": ["./node_modules/@types/three"], "three/addons/*": ["./node_modules/@types/three/examples/jsm/*"] }
+  },
+  "include": ["public/js/core/**/*.js", "public/js/net/**/*.js", "public/js/phone/**/*.js", "public/js/screen/**/*.js"]
+}

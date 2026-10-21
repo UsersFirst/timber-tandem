@@ -36,7 +36,12 @@ export class RoomHost {
     this.key = '';
     /** @type {RelayClient|null} */
     this.relay = null;
+    /** Changes on every page load: clients reset their clock sync when it does. */
+    this.boot = Math.random().toString(36).slice(2, 10);
   }
+
+  /** Let a second home's screen join (online duo), or stop letting them. @param {boolean} open */
+  setInvite(open) { this.relay?.send({ t: 'invite', open }); }
 
   /** Resume this tab's room after a reload, else make a new one. */
   open({ fresh = false } = {}) {
@@ -55,7 +60,8 @@ export class RoomHost {
       onState: (s) => {
         this.h.onState?.(s);
         if (s === 'open') for (const [seat, sec] of this.secrets) this._allow(seat, sec);
-        if (s === 'refused') { this.relay?.close(); this.open({ fresh: true }); }
+        // Only a real refusal (another host owns this code) starts a new room.
+        if (s === 'refused') { this.relay?.close(); this.secrets.clear(); this.open({ fresh: true }); }
       },
       onJson: (m) => this._json(m),
       onBinary: (b) => this._binary(b),
@@ -107,11 +113,11 @@ export class RoomHost {
     const now = performance.now();
     switch (m.t) {
       case 'from-pad':
-        if (m.msg?.t === 'ping') { this.toPad(m.seat, { t: 'pong', id: m.msg.id, c0: m.msg.c0, h: performance.now() }); return; }
+        if (m.msg?.t === 'ping') { this.toPad(m.seat, { t: 'pong', id: m.msg.id, c0: m.msg.c0, h: performance.now(), hb: this.boot }); return; }
         this.h.onPadMsg(m.seat, m.msg);
         return;
       case 'from-screen':
-        if (m.msg?.t === 'ping') { this.toScreens({ t: 'pong', id: m.msg.id, c0: m.msg.c0, h: performance.now() }, m.id); return; }
+        if (m.msg?.t === 'ping') { this.toScreens({ t: 'pong', id: m.msg.id, c0: m.msg.c0, h: performance.now(), hb: this.boot }, m.id); return; }
         this.h.onScreenMsg(m.id, m.msg);
         return;
       case 'pad-joined': this.h.onPadJoined(m.seat); return;

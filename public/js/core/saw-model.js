@@ -17,8 +17,13 @@
 // ============================================================
 
 export const SAW = Object.freeze({
-  /** |e| under this cuts. Below 0.5, so one person sawing alone always binds. */
-  GREEN: 0.35,
+  /** |e| under this cuts. Below 0.5, so one person sawing alone always binds.
+   *  0.40 ≈ the pair may drift ±80 ms apart at 96 BPM (first guess; the
+   *  phone spike tunes it, docs/PLAYTEST.md). */
+  GREEN: 0.4,
+  /** Strain must stay past the green line this long to spoil a stroke, so a
+   *  one-sample sensor glitch can't (a real push lasts far longer). */
+  BIND_MS: 50,
   /** |e| past this throws a tantrum. */
   RED: 0.8,
   /** s must travel at least this far (of 2.0 end to end) for a reversal to count as a stroke. */
@@ -43,6 +48,7 @@ export const SAW = Object.freeze({
  * @property {number} strokeStartS
  * @property {number} strokeMaxE      max |e| this stroke
  * @property {number} strokeMaxESigned  e at that max
+ * @property {number} overSince       when |e| last went past the green line (NaN if under)
  * @property {boolean} strokeSpoiled   a tantrum happened this stroke
  * @property {number} cooldownUntil
  * @property {number} bites
@@ -62,7 +68,7 @@ export const SAW = Object.freeze({
 export function createSaw() {
   return {
     s: 0, e: 0, dir: 0, extreme: 0,
-    strokeStartT: 0, strokeStartS: 0, strokeMaxE: 0, strokeMaxESigned: 0, strokeSpoiled: false,
+    strokeStartT: 0, strokeStartS: 0, strokeMaxE: 0, strokeMaxESigned: 0, strokeSpoiled: false, overSince: NaN,
     cooldownUntil: -Infinity,
     bites: 0, strokes: 0, streak: 0, bestStreak: 0, tantrums: 0, chatters: 0, binds: 0,
     travelGood: 0, travelAll: 0, lastT: NaN,
@@ -86,17 +92,14 @@ export function blameOf(e, vA, vB) {
 }
 
 /**
- * Who to mark for this strain. With the beat known: the handle further from
- * where the beat says it should be (Grandma never is). Without: blameOf.
+ * Who to mark for this strain: the plan's literal rule (PLAN §4.3), the hand
+ * moving the way that makes the strain worse. Being off the beat is shown
+ * separately, on the beat strip, not as blame.
  * @param {SawInput} input @param {number} pA @param {number} pB @param {number} e
  * @returns {Seat|null}
  */
 export function whoStrains(input, pA, pB, e) {
-  if (typeof input.beatPos === 'number' && Number.isFinite(input.beatPos)) {
-    const ts = targetS(input.beatPos);
-    const dA = Math.abs(pA - ts), dB = Math.abs(pB + ts);
-    if (Math.abs(dA - dB) > 0.05) return dA > dB ? 'A' : 'B';
-  }
+  void pA; void pB;
   return blameOf(e, input.vA ?? 0, input.vB ?? 0);
 }
 
@@ -114,8 +117,7 @@ export function zoneOf(e) {
  * @property {number} [vA]    stroke velocity, p per second (for blame)
  * @property {number} [vB]
  * @property {number} beatMs  current beat length (chatter threshold)
- * @property {number} [beatPos] beats since the song started; when known, blame
- *   goes to the handle furthest off its beat (PLAN §4.3), not the velocity rule
+ * @property {number} [beatPos] beats since the song started (for the record)
  */
 
 /**
@@ -161,8 +163,14 @@ export function stepSaw(st, input) {
     if (who) st.blameTime[who] += dt;
   }
 
-  // Worst strain this stroke.
-  if (absE > st.strokeMaxE) { st.strokeMaxE = absE; st.strokeMaxESigned = e; }
+  // Worst sustained strain this stroke: past the green line for BIND_MS.
+  if (absE >= SAW.GREEN) {
+    if (!Number.isFinite(st.overSince)) st.overSince = t;
+    if (t - st.overSince >= SAW.BIND_MS && absE > st.strokeMaxE) { st.strokeMaxE = absE; st.strokeMaxESigned = e; }
+  } else {
+    st.overSince = NaN;
+    if (absE > st.strokeMaxE) { st.strokeMaxE = absE; st.strokeMaxESigned = e; }
+  }
 
   // Tantrum: crossing the red line, once per cooldown.
   if (absE >= SAW.RED && !cooling) {
@@ -225,8 +233,12 @@ function completeStroke(st, t, beatMs, ev, newDir, s) {
     st.strokeMaxESigned = st.e;
     st.strokeSpoiled = false;
   }
-  // Too short to be a stroke: the reversal still flips direction, but the
-  // stroke keeps accumulating from where it started.
+  // Too short to be a stroke: the saw still turned around here, so the next
+  // stroke is measured from this turnaround if it went past the old start.
+  else if ((newDir === -1 && endedAt > st.strokeStartS) || (newDir === 1 && endedAt < st.strokeStartS)) {
+    st.strokeStartS = endedAt;
+    st.strokeStartT = t;
+  }
   st.dir = newDir;
   st.extreme = s;
 }

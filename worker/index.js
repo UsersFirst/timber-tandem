@@ -56,6 +56,7 @@ export function routeMessage(role, message) {
       return { toScreens: typeof m.id === 'string' ? m.id : '*', data: JSON.stringify(m.msg ?? null) };
     }
     if (m.t === 'kick-screen' && typeof m.id === 'string') return { kick: m.id };
+    if (m.t === 'invite') return { invite: !!m.open };
     return null;
   }
   if (role.startsWith('screen:')) {
@@ -110,7 +111,9 @@ export class TimberRoom {
     const url = new URL(request.url);
     const role = parseRole(url.searchParams.get('role'));
     if (!role) return new Response('Invalid role', { status: 400 });
-    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
+    // Auth is checked before the upgrade, so a client that can't connect can
+    // ask the same URL over plain HTTP why (403/404/409, or 426 = allowed).
+    const upgrade = request.headers.get('Upgrade') === 'websocket';
 
     let tag = role;
     if (role === 'host') {
@@ -118,10 +121,13 @@ export class TimberRoom {
       if (typeof key !== 'string' || !/^[0-9a-f]{32}$/.test(key)) return new Response('Host key required', { status: 403 });
       const keyHash = await sha256hex(key);
       const claimed = await this.state.storage.get('hostkey');
+      if (claimed && claimed !== keyHash) return new Response("Not this room's host", { status: 403 });
+      if (!upgrade) return new Response('Expected WebSocket', { status: 426 });
       if (!claimed) await this.state.storage.put('hostkey', keyHash);
-      else if (claimed !== keyHash) return new Response("Not this room's host", { status: 403 });
     } else if (role === 'screen') {
       if (!(await this.state.storage.get('hostkey'))) return new Response('No such room', { status: 404 });
+      // A second home's screen only while the host has the invite open.
+      if (!(await this.state.storage.get('invite'))) return new Response('Not invited', { status: 403 });
       const id = url.searchParams.get('id');
       if (typeof id !== 'string' || !/^[a-z0-9]{6,16}$/.test(id)) return new Response('Screen id required', { status: 400 });
       const others = this.state.getWebSockets().filter((w) => {
@@ -135,11 +141,14 @@ export class TimberRoom {
       const allowed = await this.state.storage.get('allow:' + seatOfRole(role));
       if (!(await secretMatches(url.searchParams.get('k'), allowed))) return new Response('Not paired', { status: 403 });
     }
+    if (!upgrade) return new Response('Expected WebSocket', { status: 426 });
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
+    // A reconnect (or a second phone on the same link) replaces the old
+    // socket; 4002 tells that client it's final, so the two don't fight.
     for (const sock of this.state.getWebSockets(tag)) {
-      try { sock.close(1000, 'replaced'); } catch { /* closed */ }
+      try { sock.close(4002, 'replaced'); } catch { /* closed */ }
     }
     this.state.acceptWebSocket(server, [tag]);
     await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
@@ -171,6 +180,10 @@ export class TimberRoom {
       for (const p of this.state.getWebSockets('pad-' + r.allow.seat)) {
         try { p.close(4001, 'new link'); } catch { /* closed */ }
       }
+      return;
+    }
+    if ('invite' in r) {
+      await this.state.storage.put('invite', !!r.invite);
       return;
     }
     if (r.kick) {

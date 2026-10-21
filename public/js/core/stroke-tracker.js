@@ -45,6 +45,8 @@ export const TRACK = Object.freeze({
   TRAVEL_EMA: 0.3,
   /** Twist that counts as a full steer, degrees. */
   ROLL_FULL_DEG: 30,
+  /** The snap to ±1 at a reversal blends in over this long, s. */
+  SNAP_BLEND_S: 0.08,
   /** Gaps longer than this restart the filters, ms. */
   MAX_GAP_MS: 250,
 });
@@ -88,7 +90,15 @@ export class StrokeTracker {
     this.reset();
   }
 
-  reset() {
+  /** @param {{keepLearned?: boolean}} [o] keep the learned stroke size (a gap, not a new player) */
+  reset(o = {}) {
+    const keep = o.keepLearned && Number.isFinite(this.halfTravel);
+    const learned = keep ? { halfTravel: this.halfTravel, lastPeakV: this.lastPeakV, p: this.p } : null;
+    this._reset();
+    if (learned) { this.halfTravel = learned.halfTravel; this.lastPeakV = learned.lastPeakV; this.p = learned.p; }
+  }
+
+  _reset() {
     this.lastT = NaN;
     this.aLp = 0;
     this.aDc = 0;          // slow mean of the axis acceleration (removed)
@@ -101,6 +111,7 @@ export class StrokeTracker {
     this.zeroT = NaN;     // most recent zero crossing of v
     this.distAtZero = 0;
     this.startP = -1;     // p at the last reversal (±1)
+    this.snapOff = 0;     // what's left of the snap to ±1, blended out
     this.p = 0;
     this.pv = 0;          // dp/dt, per second
     this.halfTravel = this.profile.halfTravel;
@@ -122,8 +133,12 @@ export class StrokeTracker {
    */
   push(s) {
     const prof = this.profile;
-    let dt = Number.isFinite(this.lastT) ? (s.t - this.lastT) / 1000 : 0;
-    if (dt > TRACK.MAX_GAP_MS / 1000 || dt < 0) { this.reset(); dt = 0; }
+    const first = !Number.isFinite(this.lastT);
+    let dt = first ? 0 : (s.t - this.lastT) / 1000;
+    // A duplicate or out-of-order timestamp (Android can coalesce events):
+    // skip the sample, keep every filter as it is.
+    if (!first && dt <= 0) return null;
+    if (dt > TRACK.MAX_GAP_MS / 1000) { this.reset({ keepLearned: true }); dt = 0; }
     this.lastT = s.t;
 
     // Steering roll from gravity.
@@ -135,7 +150,7 @@ export class StrokeTracker {
     }
 
     const a = dot(s.a, prof.axis);
-    if (dt === 0) { this.aLp = 0; return null; }
+    if (dt === 0) return null; // first sample (or right after a gap): filters start here
     const kLp = 1 - Math.exp(-2 * Math.PI * TRACK.LOWPASS_HZ * dt);
     this.aDc += (a - this.aDc) * (1 - Math.exp(-2 * Math.PI * TRACK.DC_HZ * dt));
     this.aLp += (a - this.aDc - this.aLp) * kLp;
@@ -157,7 +172,12 @@ export class StrokeTracker {
     if (this.dir === 0) {
       if (Math.abs(this.v) >= thresh) this._startHalf(vs, Number.isFinite(this.zeroT) ? this.zeroT : s.t, 0);
     } else if (vs !== 0 && vs !== this.dir && Math.abs(this.v) >= thresh) {
-      const zt = Number.isFinite(this.zeroT) ? this.zeroT : s.t;
+      let zt = Number.isFinite(this.zeroT) ? this.zeroT : s.t;
+      // Too soon after the last reversal to be a new half-stroke? Wait until
+      // the minimum has passed (not forever: the crossing may be real).
+      if (Number.isFinite(this.revT) && zt - this.revT < TRACK.MIN_HALF_MS && s.t - this.revT >= TRACK.MIN_HALF_MS) {
+        zt = this.revT + TRACK.MIN_HALF_MS;
+      }
       if (!Number.isFinite(this.revT) || zt - this.revT >= TRACK.MIN_HALF_MS) {
         const travel = Math.max(0, this.distAtZero);
         const ms = Number.isFinite(this.revT) ? zt - this.revT : NaN;
@@ -172,20 +192,30 @@ export class StrokeTracker {
         }
         this.lastPeakV = Math.max(0.1, this.peakV);
         // The new half-stroke started at the zero crossing; keep what it
-        // already travelled since then.
+        // already travelled since then. The snap to ±1 (which stops drift)
+        // is blended in over ~80 ms so a short stroke never jumps.
+        const before = this.p;
         this._startHalf(vs, zt, Math.max(0, -(this.dist - this.distAtZero)));
+        this.snapOff = before - this._ramp();
       }
     }
     if (Math.abs(this.v) > this.peakV) this.peakV = Math.abs(this.v);
 
     // Position: from the end we reversed at, toward the other end.
-    const prevP = this.p;
     if (this.dir !== 0) {
-      const frac = Math.min(1, Math.max(0, this.dist) / this.halfTravel);
-      this.p = this.startP + -this.startP * 2 * frac;
+      this.snapOff *= Math.exp(-dt / TRACK.SNAP_BLEND_S);
+      this.p = Math.max(-1, Math.min(1, this._ramp() + this.snapOff));
     }
-    this.pv = (this.p - prevP) / dt;
+    // Stroke velocity in p per second, straight from the hand's velocity
+    // (smooth, no spike at the snap).
+    this.pv = (2 * this.v) / this.halfTravel;
     return rev;
+  }
+
+  /** Where the half-stroke ramp puts p, from the end we reversed at. */
+  _ramp() {
+    const frac = Math.min(1, Math.max(0, this.dist) / this.halfTravel);
+    return this.startP - this.startP * 2 * frac;
   }
 
   /** @param {number} dir @param {number} t @param {number} already */

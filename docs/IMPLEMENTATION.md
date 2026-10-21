@@ -116,3 +116,52 @@ Grandma (solo), when chosen in the lobby, fills seat B and is drawn as the Georg
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing.
 - **Smoke:** the screen and two simulated phone pages over a local wrangler dev, driven through a full tree, plus Grandma solo and an online duo with a guest screen.
+
+## Status (2026-10-21)
+
+Built and passing:
+- 38 unit tests;
+- type check (`npm run check`);
+- 6 end-to-end smokes over the real relay with simulated phones (`npm run smoke`): bots, two phones, a partner late in play, waggle, Grandma solo, and online duo.
+
+Three reviews have been applied: correctness (15 findings), design fidelity against PLAN, and a cross-model review from Gemini.
+
+**Flow:** title → lobby → safety card (first time) → cold open → Grandma's lesson (calibration) → tree (notch → back cut → TIMBER → score) → next tree / one more tree.
+
+### Built differently from the first draft (from review)
+
+- **Saw:**
+  - **Green line:** 0.40 (it was 0.35), which is about ±80 ms between partners at 96 BPM.
+  - **Glitch filter:** strain has to stay past the green line for 50 ms before it spoils a stroke.
+  - **Blame:** follows the plan's velocity rule. Being off the beat shows on the beat strip instead.
+  - **Stepping:** the saw steps at 120 Hz up to the newest sample of every live hand, so the frame rate and a stalled phone can't cause false strain.
+- **Tracker:**
+  - The snap to ±1 at a reversal blends in over 80 ms.
+  - Duplicate timestamps are skipped.
+  - The learned stroke size survives gaps.
+  - "Pull" is the last velocity lobe of the move, so reaching first doesn't flip the axis.
+- **Trees:** the small pine takes 40 bites and the big pine 64. That lands a clean pair at about 25 s and 40 s of back cut; real pairs land nearer the plan's 60–90 s.
+- **Aim:** comes from the lean over the last 4 bites plus the live lean, so a late twist counts.
+- **Notch:**
+  - The camera cuts to the far side and the picture is mirrored, so Sir Winston (orange, seat A) is on the left in every shot.
+  - The TV announces each turn ("Sir Winston — chop!"), with a seat-panned sound.
+  - Small chops never glance: soft is now 0.4 × your calibrated swing.
+- **Online:**
+  - A second home can only join while the host has **Invite another home** open, and only one home per game.
+  - A network blip never makes a new room.
+  - A host reload resets everyone's clock sync.
+
+### Open for Pete (not in the plan; kept small, easy to change)
+
+1. **Landing:** shown as degrees off the skid, with the words skid / close / wide / privy. There are no stars.
+2. **Grandma holds her handle level.** Solo, you steer at half strength (the blade leans by the average of the two twists, PLAN §4.4).
+3. **The notch is seen from the far side, mirrored** (above).
+4. **Calibration** is 5 short steps, with live progress and a visible countdown. PLAN wants it folded into the first strokes on the small pine. That's the next iteration if the steps feel slow.
+5. **The Grandma stand-in** is the Georgian goose. She needs her own model (tandemonium-claude-3d pipeline).
+
+### Not done yet (needs real hardware or Pete)
+
+- **Real phones:** the spike and toy runs in `docs/PLAYTEST.md`.
+- **Deploy:** `npx wrangler login` once, then `npm run deploy`. Phones need HTTPS.
+- **A real TV:** frame rate on a TV-class device. The laptop renders at 480–630 fps uncapped.
+- **Voice:** recorded lines for Grandma and Old Misery (captions only for now).

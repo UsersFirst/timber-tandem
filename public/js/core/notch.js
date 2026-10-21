@@ -39,7 +39,7 @@ export function createNotch(steps, first = 'A') {
  */
 export function notchHit(st, seat, t, grade) {
   const other = seat === 'A' ? 'B' : 'A';
-  const clang = t - st.lastHit[other] < NOTCH.CLANG_MS;
+  const clang = Math.abs(t - st.lastHit[other]) < NOTCH.CLANG_MS;
   st.lastHit[seat] = t;
   if (st.done >= st.steps) return { kind: 'chip', seat, lit: st.lit };
   if (clang) { st.clangs++; return { kind: 'clang', seat, lit: st.lit }; }

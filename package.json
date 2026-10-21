@@ -9,10 +9,14 @@
     "deploy": "wrangler deploy",
     "test": "node --test \"test/unit/*.test.mjs\"",
     "sync-lab": "node scripts/sync-lab.mjs",
-    "smoke": "node scripts/smoke-toy.mjs"
+    "smoke": "node scripts/smoke-toy.mjs",
+    "typecheck": "tsc -p jsconfig.json",
+    "check": "npm run typecheck && npm test"
   },
   "devDependencies": {
+    "@types/three": "^0.161.2",
     "puppeteer": "^24.43.1",
+    "typescript": "^5.9.3",
     "wrangler": "^4.151.3"
   }
 }
