@@ -4,13 +4,19 @@ The simulated phones prove the pipeline: sensors, then tracker, calibration, clo
 
 ## Setup (once)
 
-1. `npx wrangler login`, then `npm run deploy`. That gives you `https://timber-tandem.<account>.workers.dev`. Phones need HTTPS for motion.
+1. The game is live at **https://timber-tandem.pete-872.workers.dev** (`npm run deploy` to update). Phones need HTTPS for motion.
 2. Use a laptop on the TV over HDMI. Turn on the TV's **game mode**. Use the TV or laptop speakers, **not Bluetooth**.
 3. Open the site on the laptop and press **Play on this screen**. Each phone scans its handle's QR in **Safari or Chrome**, not an in-app scanner browser.
+4. **Android:** turn **auto-rotate off**. A quick twist otherwise rotates the page, and Chrome stops sending motion while it does (the 2026-10-21 drops). Tapping *Pick up the saw* also tries to lock portrait in full screen.
+5. **One person, two phones** (solo testing) works: the hands go opposite ways, like pistons. The lesson checks each phone's direction on the clicks and turns a backwards one round.
+
+**The test log** is always on now and survives closing the tab: it's saved in the browser every 2 s. Open `/?host&spike` to show the **Download spike log** button (bottom-left); on a fresh page it downloads the last session that has anything in it. `?spike` also adds the phones' raw sensor stream.
 
 ## Step C: phone sensing spike
 
 Open `/?host&spike`. Every phone, saw frame and event is logged. Use **Download spike log** (bottom-left) after each run and name the file `device-device-scenario.json`.
+
+**Is a phone backwards?** During sawing, the dot under each goose should go *back* when that hand pulls toward its belly. If it goes the wrong way: phone menu → **My hand goes the wrong way** (in the lesson, or after a press-and-hold **Pause**).
 
 | Run | Who | What to do |
 |---|---|---|

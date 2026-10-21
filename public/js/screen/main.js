@@ -102,6 +102,7 @@ function runLoop(tick) {
 function hostAction(game, a, arg) {
   switch (a) {
     case 'start': game.start(); break;
+    case 'menu': game.menu(arg); break;
     case 'grandma': game.useGrandma(arg === 'on'); break;
     case 'invite': game.openInvite(!game.inviteOpen); game.refreshLinks(); break;
     case 'keys': game.setKind(arg, 'keys'); break;
@@ -112,7 +113,7 @@ function hostAction(game, a, arg) {
     case 'again': game.toLobby(); break;
     case 'skip-calib': game.skipCalibration(); break;
     case 'skip-intro': game.skipIntro(); break;
-    case 'spike-dl': download(`timber-spike-${Date.now()}.json`, JSON.stringify(game.spikeDump())); break;
+    case 'spike-dl': game.spikeDump().then((d) => download(`timber-log-${Date.now()}.json`, JSON.stringify(d))); break;
     default:
   }
 }
@@ -132,7 +133,9 @@ function bindKeys(game) {
       else if (game.phase === 'safety') game.safetyOk();
       else if (game.phase === 'score' || game.phase === 'end') game.next();
       else if (game.phase === 'intro') game.skipIntro();
+      else if (game.held) game.resume();
     }
+    if (down && ev.code === 'Escape') { if (game.held) game.resume(); else game.pause(); }
   };
   window.addEventListener('keydown', on(true));
   window.addEventListener('keyup', on(false));

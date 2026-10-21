@@ -124,7 +124,7 @@ export class Presenter {
       });
     }
     if (this.audio.ready) {
-      const sawing = v.phase === 'saw' && !v.paused;
+      const sawing = v.phase === 'saw' && !v.paused && !v.held;
       this.audio.setSawVoice({ speed: sawing ? v.speed : 0, zone: v.zone, strainSign: Math.abs(v.e) < 0.05 ? 0 : v.e < 0 ? -1 : 1, streak: v.streak });
       const level = v.phase === 'saw' ? (v.streak >= 12 ? 3 : v.streak >= 7 ? 2 : v.streak >= 3 ? 1 : 0) : v.phase === 'notch' ? 1 : 0;
       if (level !== this.intensity && v.song && !v.silentSong) { this.intensity = level; this.audio.setIntensity(/** @type {0|1|2|3} */ (level)); }

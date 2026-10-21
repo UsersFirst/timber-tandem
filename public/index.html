@@ -94,15 +94,21 @@
   .gauge { background: rgba(27,20,16,.72); border-radius: 20px; padding: 10px 14px 8px; }
   #blade { width: 100%; height: 120px; display: block; }
   #beats { width: 100%; height: 56px; display: block; margin-top: 4px; }
-  .cut { height: 186px; background: rgba(27,20,16,.72); border-radius: 18px; position: relative; overflow: hidden; display: grid; align-items: end; }
+  #hands { width: 100%; height: 64px; display: block; }
+  #calib-hands { width: min(900px, 100%); height: 84px; display: block; margin: 10px auto 0; }
+  #calib-hands[hidden] { display: none; }
+  #held { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); padding: 26px 30px; text-align: center; z-index: 35; }
+  #held-actions { display: grid; gap: 12px; margin-top: 16px; }
+  #pause-btn { position: fixed; z-index: 24; left: 14px; top: 64px; }
+  .cut { height: 250px; background: rgba(27,20,16,.72); border-radius: 18px; position: relative; overflow: hidden; display: grid; align-items: end; }
   #cut-fill { background: linear-gradient(0deg, #8a5a2b, #f2b24c); width: 100%; height: 0%; transition: height .2s; }
   #cut-label { position: absolute; top: 8px; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 700; }
-  .dial { position: absolute; right: 22px; bottom: 236px; width: 150px; height: 84px; background: rgba(27,20,16,.72); border-radius: 80px 80px 14px 14px; overflow: hidden; }
+  .dial { position: absolute; right: 22px; bottom: 300px; width: 150px; height: 84px; background: rgba(27,20,16,.72); border-radius: 80px 80px 14px 14px; overflow: hidden; }
   .dial .lbl { position: absolute; bottom: 6px; width: 100%; text-align: center; font-size: 11px; letter-spacing: .1em; opacity: .7; }
   #dial-needle, #dial-target { position: absolute; left: calc(50% - 2px); bottom: 18px; width: 4px; height: 56px; transform-origin: 50% 100%; border-radius: 2px; transition: transform .15s; }
   #dial-needle { background: #fff; }
   #dial-target { background: var(--green); opacity: .8; width: 10px; left: calc(50% - 5px); }
-  #caption { position: fixed; z-index: 15; left: 50%; bottom: 252px; transform: translate(-50%, 12px); opacity: 0; transition: opacity .25s, transform .25s; background: rgba(27,20,16,.88); border-radius: 18px; padding: 12px 20px; max-width: min(860px, 90vw); pointer-events: none; text-align: center; }
+  #caption { position: fixed; z-index: 15; left: 50%; bottom: 316px; transform: translate(-50%, 12px); opacity: 0; transition: opacity .25s, transform .25s; background: rgba(27,20,16,.88); border-radius: 18px; padding: 12px 20px; max-width: min(860px, 90vw); pointer-events: none; text-align: center; }
   #caption.show { opacity: 1; transform: translate(-50%, 0); }
   html[data-phase="lobby"] #caption, html[data-phase="calibrate"] #caption { bottom: 24px; }
   #caption-who { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #f6d28b; }
@@ -170,6 +176,7 @@
     <div id="calib-title"></div>
     <div class="calib-art"><div class="fist"></div></div>
     <div id="calib-text"></div>
+    <canvas id="calib-hands" hidden></canvas>
     <div id="calib-seats"></div>
     <div id="calib-left" class="muted"></div>
     <uf-button id="calib-skip" data-action="skip-calib" label="Skip" variant="ghost" size="sm"></uf-button>
@@ -201,12 +208,18 @@
     </div>
     <div class="dial"><div id="dial-target"></div><div id="dial-needle"></div><div class="lbl">AIM · SKID</div></div>
     <div class="bottom">
-      <div class="gauge"><canvas id="blade"></canvas><canvas id="beats"></canvas></div>
+      <div class="gauge"><canvas id="blade"></canvas><canvas id="hands"></canvas><canvas id="beats"></canvas></div>
       <div class="cut"><div id="cut-label"></div><div id="cut-fill"></div></div>
     </div>
   </div>
   <div id="caption"><div id="caption-who"></div><div id="caption-text"></div></div>
   <div id="toast" class="toast"></div>
+  <div id="held" class="panel" hidden>
+    <div class="logo"><span class="w1" style="font-size:44px">Paused</span></div>
+    <div class="muted">Old Misery waits. Esc to resume.</div>
+    <div id="held-actions"></div>
+  </div>
+  <uf-button id="pause-btn" data-action="menu" data-arg="pause" label="Pause" sub="Esc" variant="ghost" size="sm" hidden></uf-button>
   <div id="paused" hidden>Hold up… a phone dropped out. Old Misery waits.</div>
   <uf-button id="intro-skip" data-action="skip-intro" label="Skip" variant="ghost" size="sm" hidden></uf-button>
   <div id="net"></div>

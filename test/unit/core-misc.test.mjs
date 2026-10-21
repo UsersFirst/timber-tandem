@@ -4,7 +4,7 @@ import { HatchetDetector, CHOP } from '../../public/js/core/hatchet.js';
 import { createNotch, notchHit, notchFrac } from '../../public/js/core/notch.js';
 import { createCut, cutBite, fallAngle, landing, bladeLean, MAX_FALL_DEG } from '../../public/js/core/tree.js';
 import { ClockSync } from '../../public/js/core/clock-sync.js';
-import { restGravity, pullDirection, strokeAxis, lagToBeat, rollSignFrom, chopPeak, songTempo } from '../../public/js/core/calibration.js';
+import { restGravity, pullDirection, strokeAxis, lagToBeat, rollSignFrom, chopPeak, songTempo, pullParity } from '../../public/js/core/calibration.js';
 
 const DT = 1000 / 60;
 
@@ -135,4 +135,28 @@ test('notch: a late-arriving hit far apart in time is not a clang (review #11)',
   const st = createNotch(4, 'B');
   notchHit(st, 'A', 1600, 'good'); // out of turn, arrives first
   assert.equal(notchHit(st, 'B', 1300, 'good').kind, 'open');
+});
+
+test('pullParity: Pete\'s 2026-10-21 two-phone session — phone B was reversed', () => {
+  // Pulled ends in beats from the first click (96 BPM), from the real log:
+  // both phones said "pulled" on the odd clicks, so B (wants even) is backwards.
+  const beatMs = 625;
+  const A = [1.59, 3.48, 5.20, 7.13].map((b) => b * beatMs);
+  const B = [1.74, 3.43, 5.21, 7.17].map((b) => b * beatMs);
+  const a = pullParity(A, 0, beatMs, 65, 'A');
+  const b = pullParity(B, 0, beatMs, 107, 'B');
+  assert.equal(a?.reversed, false);
+  assert.equal(b?.reversed, true);
+});
+
+test('pullParity: on-cue hands are left alone; too few strokes is no verdict', () => {
+  const beatMs = 600;
+  const A = [1, 3, 5, 7].map((b) => b * beatMs + 40);
+  const B = [2, 4, 6, 8].map((b) => b * beatMs + 40);
+  assert.equal(pullParity(A, 0, beatMs, 40, 'A')?.reversed, false);
+  assert.equal(pullParity(B, 0, beatMs, 40, 'B')?.reversed, false);
+  // A sloppy, half-beat-off player isn't flipped on weak evidence.
+  const mush = [1.5, 2.6, 4.4, 5.5].map((b) => b * beatMs);
+  assert.equal(pullParity(mush, 0, beatMs, 0, 'A')?.reversed, false);
+  assert.equal(pullParity([600, 1800], 0, beatMs, 0, 'A'), null);
 });

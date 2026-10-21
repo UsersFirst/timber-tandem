@@ -151,6 +151,23 @@ Three reviews have been applied: correctness (15 findings), design fidelity agai
   - A network blip never makes a new room.
   - A host reload resets everyone's clock sync.
 
+### First real-phone session (2026-10-21: iPhone + Android, one person, one phone in each hand)
+
+Log: `~/Downloads/timber-spike-1792590647544.json` (140 s, raw sensors).
+
+- **No bites in 50 s of sawing, 18 tantrums.** The two hands read *in step* (both "pulled" on the same beats), so every stroke was a push or a tug. Pete's timing was fine: one stroke per beat.
+- **Cause: phone B's direction was backwards.** The pull step failed on both phones: it waited for the hand to be completely still for 350 ms, which a hand held in the air never is. Each phone then guessed its direction from the coached grip. Even when the pull is found, it can't be trusted: the grip changed between steps. B lay flat for "hold still", and both phones were on their sides while sawing, mirror images of each other.
+- **Fixes:**
+  - The pull step ends when the hand settles below its peak, and runs once more if a phone misses it.
+  - The lesson's click stage scores each phone's pulled ends against its cue (A on odd clicks, B on even) and turns a backwards phone round (`pullParity`, tested on this session's numbers).
+  - Each phone has a manual **My hand goes the wrong way** button.
+- **Drops:** the Android phone's sensor stream stopped for 0.3–3 s, five times, each as the phone swung between portrait and landscape: auto-rotate. The phone now tries a portrait lock in full screen, and the playtest guide says to turn auto-rotate off.
+- **Also added:**
+  - **Hand cues:** under each goose, BACK / FORWARD, a ring where the hand should be and a dot where the phone is. They show in the lesson's saw step too.
+  - **Pause:** Esc or the TV button; press-and-hold on a phone. From the pause menu: resume, restart the tree, or stop and go back to the lobby.
+  - **Phone menus:** every TV choice is on the phones too (start, solo, safety, skip, next tree, one more, finish, back to lobby).
+  - **The test log:** always on, saved in the browser every 2 s.
+
 ### Open for Pete (not in the plan; kept small, easy to change)
 
 1. **Landing:** shown as degrees off the skid, with the words skid / close / wide / privy. There are no stars.

@@ -18,4 +18,5 @@ await p.evaluate(() => window.__game.skipIntro());
 await until(() => window.__game.phase === 'notch'); await sleep(2000); await shot('3-notch');
 await until(() => window.__game.phase === 'saw'); await sleep(5000); await shot('4-saw-lagged');
 await until(() => window.__game.view.zone !== 'green', 30000); await shot('5-saw-strain');
+await p.evaluate(() => window.__game.pause()); await sleep(800); await shot('6-paused');
 console.log('ok'); await b.close();

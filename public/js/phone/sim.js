@@ -8,6 +8,9 @@
 //   ?sim=late:260    on the beat while calibrating, 260 ms late while playing
 //   ?sim=fast        saws at twice the beat (waggle; should chatter)
 //   ?sim=still       never moves
+//   ?sim=reversed    good, but the grip turns round after the pull step (one
+//                    phone in each hand): its strokes read backwards until the
+//                    lesson's click stage catches it and the phone flips
 // Optional &steer=0.4 twists the fist (steering), &amp=0.12 stroke size (m).
 // It follows what the host asks for: holds still for calib-rest, makes one
 // pull for calib-pull, twists right for calib-twist, chops for calib-chop and
@@ -96,7 +99,7 @@ export class SimSawyer {
       const h = 8;
       const x = (k) => (this.amp / 2) * this._p(t + k);
       const acc = ((x(h) - 2 * x(0) + x(-h)) / (h * h)) * 1e6;
-      a = [noise(), -acc + noise(), noise()];
+      a = [noise(), (this.kind === 'reversed' ? acc : -acc) + noise(), noise()];
       roll = m === 'saw' ? this.steer * 30 : 0;
     } else if (m === 'calib-pull' && this.kind !== 'still' && since > 500 && since < 1300) {
       // one deliberate pull: speed up toward the belly, then brake

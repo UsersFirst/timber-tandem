@@ -90,6 +90,30 @@ export function lagToBeat(reversalTimes, beat0, beatMs) {
 }
 
 /**
+ * Is this phone's "pull" backwards? In the lesson's click stage each hand
+ * follows its cue: seat A arrives pulled on odd clicks, seat B on even ones
+ * (the hands always move opposite ways). If a phone's pulled ends keep
+ * landing on its partner's clicks, its direction is reversed: that happens
+ * when the grip changes between the pull step and sawing, or with one phone
+ * in each hand (they're mirror images).
+ *
+ * Scored on the circle so ends that land half a beat late still count:
+ * mean cos(π·phase), where phase is the end's position in beats (lag
+ * removed). Pulled near odd beats → −1, near even → +1.
+ * @param {number[]} pullEnds host ms of this phone's pulled-end reversals
+ * @param {number} beat0 @param {number} beatMs @param {number} lagMs
+ * @param {'A'|'B'} seat
+ * @returns {{reversed: boolean, score: number, n: number}|null} null if too few strokes to tell
+ */
+export function pullParity(pullEnds, beat0, beatMs, lagMs, seat) {
+  if (pullEnds.length < 3) return null;
+  const score = pullEnds.reduce((sum, t) => sum + Math.cos(Math.PI * ((t - lagMs - beat0) / beatMs)), 0) / pullEnds.length;
+  // A wants −1 (odd beats), B wants +1 (even). Only clear evidence flips.
+  const reversed = seat === 'A' ? score > 0.35 : score < -0.35;
+  return { reversed, score, n: pullEnds.length };
+}
+
+/**
  * Steering sign from "twist toward the TV's right": the median raw roll in the
  * second half of the step. +1 if that read positive.
  * @param {number[]} rawRollDeg

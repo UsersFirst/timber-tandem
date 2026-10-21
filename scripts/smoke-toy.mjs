@@ -4,7 +4,7 @@
 // ============================================================
 // Needs `npm run dev` (wrangler dev on :8787) running. Usage:
 //   node scripts/smoke-toy.mjs [scenario ...] [--base http://localhost:8787] [--shots]
-// Scenarios: bots, phones, lag, grandma, online   (default: all)
+// Scenarios: bots, phones, reversed, lag, waggle, grandma, online, menus   (default: all)
 // Phones are real /phone/ pages driven by ?sim= (synthetic devicemotion
 // through the real stroke tracker, calibration, clock sync and relay).
 // ============================================================
@@ -17,7 +17,7 @@ const args = process.argv.slice(2);
 const base = (args.find((a, i) => args[i - 1] === '--base')) || 'http://localhost:8787';
 const shots = args.includes('--shots');
 const wanted = args.filter((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--base');
-const ALL = ['bots', 'phones', 'lag', 'waggle', 'grandma', 'online'];
+const ALL = ['bots', 'phones', 'reversed', 'lag', 'waggle', 'grandma', 'online', 'menus'];
 const scenarios = wanted.length ? wanted : ALL;
 const outDir = path.resolve('scripts/out');
 fs.mkdirSync(outDir, { recursive: true });
@@ -107,19 +107,23 @@ async function run(name) {
       check(true, 'one more tree goes straight to the notch');
     }
 
-    if (name === 'phones' || name === 'lag' || name === 'waggle') {
+    if (name === 'phones' || name === 'lag' || name === 'waggle' || name === 'reversed') {
       const host = await page(`${base}/?host&spike${shots ? '' : '&noscene'}`, 'host', errors); pages.push(host);
       await waitFor(host, () => window.__game?.seats.A.link && window.__game?.seats.B.link, { label: 'links' });
       const links = await host.evaluate(() => [window.__game.seats.A.link, window.__game.seats.B.link]);
       if (shots) { await sleep(1500); await host.screenshot({ path: path.join(outDir, `smoke-${name}-lobby.png`) }); }
       const pa = await phone(links[0], name === 'waggle' ? 'fast' : 'good', 'phoneA', errors); pages.push(pa);
       if (shots) { await pa.setViewport({ width: 390, height: 780 }); await sleep(800); await pa.screenshot({ path: path.join(outDir, 'smoke-phone.png') }); }
-      const pb = await phone(links[1], name === 'lag' ? 'late:260' : name === 'waggle' ? 'fast' : 'good', 'phoneB', errors); pages.push(pb);
+      const pb = await phone(links[1], name === 'lag' ? 'late:260' : name === 'waggle' ? 'fast' : name === 'reversed' ? 'reversed' : 'good', 'phoneB', errors); pages.push(pb);
       await waitFor(host, () => window.__game?.canStart(), { label: 'both ready' });
       await host.evaluate(() => { window.__game.start(); window.__game.safetyOk(); window.__game.skipIntro(); });
       if (shots) { await sleep(1500); await host.screenshot({ path: path.join(outDir, `smoke-${name}-calib.png`) }); }
       await waitFor(host, () => ['notch', 'saw'].includes(window.__game.phase), { timeout: 120000, label: 'calibration done' });
       const cal = await host.evaluate(() => Object.values(window.__game.seats).map((s) => ({ id: s.id, calib: s.calib, lag: s.buffer.lagMs, tempo: s.tempo })));
+      if (name === 'reversed') {
+        const flips = cal.map((c) => c.id + ':' + (c.calib.autoFlipped || 'no') + ' (parity ' + c.calib.parity + ')').join(', ');
+        check(cal[0].calib.autoFlipped !== 'yes' && cal[1].calib.autoFlipped === 'yes', 'the lesson turns round only the backwards phone: ' + flips);
+      }
       for (const c of cal) {
         const steps = ['rest', 'pull', 'saw', 'twist', 'chop'];
         check(steps.every((k) => c.calib[k] === 'ok'), `${c.id} calibrated: ${steps.map((k) => k + ':' + c.calib[k]).join(' ')} lag ${Math.round(c.lag)}ms tempo ${c.tempo}`);
@@ -140,12 +144,52 @@ async function run(name) {
       }
       const s = await playTree(host, name);
       if (name === 'phones') check(s.temper >= 75 && s.tantrums <= 2, `two simulated phones: temper ${s.temper}, tantrums ${s.tantrums}, best streak ${s.bestStreak}`);
+      else if (name === 'reversed') { check(s.temper >= 75 && s.tantrums <= 2, `after the flip, the backwards phone saws: temper ${s.temper}, tantrums ${s.tantrums}`); return; }
       else check(s.temper < 75 || s.tantrums >= 1, `a partner 260 ms late in play is felt: temper ${s.temper}, tantrums ${s.tantrums}`);
       const evalLag = await host.evaluate(() => window.__game.view.evalLagMs);
       check(evalLag < 250, `matched-time lag behind now: ${evalLag} ms`);
-      const dump = await host.evaluate(() => JSON.stringify(window.__game.spikeDump()));
+      const dump = await host.evaluate(async () => JSON.stringify(await window.__game.spikeDump()));
       fs.writeFileSync(path.join(outDir, `spike-${name}.json`), dump);
       check(JSON.parse(dump).log.length > 20, 'spike log recorded');
+    }
+
+    if (name === 'menus') {
+      // A whole game run from a phone: start, safety, skip, pause, resume, stop.
+      const host = await page(`${base}/?host&grandma&noscene`, 'host', errors); pages.push(host);
+      await waitFor(host, () => window.__game?.seats.A.link, { label: 'link' });
+      const link = await host.evaluate(() => window.__game.seats.A.link);
+      const pa = await phone(link, 'good', 'phoneA', errors); pages.push(pa);
+      const tap = async (id) => {
+        await waitFor(pa, (i) => !!document.querySelector(`#menu button[data-id="${i}"]`), { label: 'phone shows ' + id }, id);
+        await pa.click(`#menu button[data-id="${id}"]`);
+      };
+      await tap('start');
+      await waitFor(host, () => window.__game.phase === 'safety', { label: 'safety' });
+      await tap('safety-ok');
+      await waitFor(host, () => window.__game.phase === 'intro', { label: 'intro' });
+      await tap('skip-intro');
+      await waitFor(host, () => window.__game.phase === 'calibrate', { label: 'calibrate' });
+      await tap('skip-calib');
+      await waitFor(host, () => window.__game.phase === 'notch', { label: 'notch' });
+      check(true, 'started, read the safety card, skipped the intro and the lesson — all from the phone');
+      // Pause is press-and-hold on the phone.
+      await waitFor(pa, () => !document.getElementById('pause').hidden, { label: 'pause button' });
+      const box = await (await pa.$('#pause')).boundingBox();
+      await pa.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await pa.mouse.down(); await sleep(150); await pa.mouse.up();
+      await sleep(400);
+      check(!(await host.evaluate(() => window.__game.held)), 'a quick tap on pause does nothing (a fist can’t pause by accident)');
+      await pa.mouse.down(); await sleep(800); await pa.mouse.up();
+      await waitFor(host, () => window.__game.held, { label: 'held' });
+      check(await host.evaluate(() => !document.getElementById('held').hidden), 'holding pause pauses the game; the TV shows the pause sheet');
+      await tap('resume');
+      await waitFor(host, () => !window.__game.held, { label: 'resumed' });
+      check(true, 'resume from the phone');
+      await host.keyboard.press('Escape');
+      await waitFor(host, () => window.__game.held, { label: 'esc pause' });
+      await tap('lobby');
+      await waitFor(host, () => window.__game.phase === 'lobby', { label: 'back to lobby' });
+      check(true, 'Esc pauses on the TV; "Stop — back to the lobby" from the phone');
     }
 
     if (name === 'grandma') {

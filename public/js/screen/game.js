@@ -13,9 +13,10 @@ import { createSaw, stepSaw, temperOf, zoneOf, targetS, grandmaHandle, SAW } fro
 import { SeatBuffer, matchedTime, HoldPull } from '../core/input-buffer.js';
 import { createNotch, notchHit, notchFrac } from '../core/notch.js';
 import { TREES, createCut, cutBite, fallAngle, cutFrac, landing, bladeLean } from '../core/tree.js';
-import { lagToBeat, songTempo } from '../core/calibration.js';
+import { lagToBeat, songTempo, pullParity } from '../core/calibration.js';
 import { SEATS } from '../core/protocol.js';
 import { LinePicker, LINES } from './lines.js';
+import { SpikeStore } from './spike-store.js';
 
 /** @typedef {'A'|'B'} SeatId */
 /** @typedef {'open'|'phone'|'grandma'|'keys'|'bot'} SeatKind */
@@ -23,9 +24,9 @@ import { LinePicker, LINES } from './lines.js';
 const CALIB_STEPS = /** @type {const} */ (['rest', 'pull', 'saw', 'twist', 'chop']);
 const CALIB_TEXT = {
   rest: ['Hold still, fist forward', 'Grip your phone in a firm fist, like a saw handle, top of the phone pointing along your stroke. Hold it out in front of you.'],
-  pull: ['One pull', 'From where you are, pull slowly to your belly — and stop.'],
-  saw: ['Saw the air', 'Small, smooth strokes at a speed that feels easy. Pull to you, then let go.'],
-  'saw-clicks': ['Now on the clicks', 'Keep sawing — land each end of the stroke on a click.'],
+  pull: ['One pull', 'From where you are, pull slowly to your belly — and hold it there.'],
+  saw: ['Saw the air', 'Small, smooth strokes at a speed that feels easy: back to you, then forward. Your dot below should go back when you pull — if it goes the wrong way, tap “My hand goes the wrong way” on that phone.'],
+  'saw-clicks': ['Now on the clicks', 'Keep sawing — follow BACK and FORWARD, one stroke per click. When one hand goes back, the other goes forward.'],
   twist: ['Twist toward the TV’s right', 'Roll your fist like turning a key. That’s how you steer the fall.'],
   chop: ['Three small chops', 'Below your shoulders, wrist and forearm. Like notching a log at your waist.'],
 };
@@ -47,7 +48,7 @@ const GOOSE_NAMES = { winston: 'Sir Winston', victoria: 'Lady Victoria', grandma
  * @property {SeatKind} kind
  * @property {'winston'|'victoria'|'grandma'} goose
  * @property {SeatBuffer} buffer
- * @property {{joined:boolean, motion:string, calibrated:boolean, rateHz:number, sim:string|null, ua:string}} phone
+ * @property {{joined:boolean, motion:string, calibrated:boolean, rateHz:number, sim:string|null, ua:string, flipped:boolean}} phone
  * @property {'here'|string} home    'here' or 'guest:<id>'
  * @property {HoldPull} hold
  * @property {{pull:boolean, left:boolean, right:boolean}} keys
@@ -80,7 +81,7 @@ export class Game {
     this.notch = createNotch(this.tree.notchSteps);
     /** @type {any[]} */
     this.scores = [];
-    this.calib = { idx: 0, stage: '', at: 0, beat0: 0, revs: /** @type {Record<SeatId, number[]>} */ ({ A: [], B: [] }) };
+    this.calib = { idx: 0, stage: '', at: 0, beat0: 0, pullRetried: false, revs: /** @type {Record<SeatId, number[]>} */ ({ A: [], B: [] }), pulls: /** @type {Record<SeatId, number[]>} */ ({ A: [], B: [] }) };
     this.paused = false;
     this.lastBroadcast = 0;
     this.lastFrame = performance.now();
@@ -90,8 +91,16 @@ export class Game {
     this.botChopAt = { A: 0, B: 0 };
     this.guests = /** @type {Set<string>} */ (new Set());
     this.inviteOpen = false;
-    this.spikeLog = /** @type {any[]} */ ([]);
+    // The test log: events, phone messages and saw frames are always logged
+    // and saved to IndexedDB every 2 s, so closing the tab never loses a
+    // session. ?spike adds the phones' raw sensor stream.
     this.spike = o.params.has('spike');
+    this.log = new SpikeStore();
+    this.lastLogFrame = 0;
+    setInterval(() => this.log.flush(this._logHeader()), 2000);
+    addEventListener('pagehide', () => this.log.flush(this._logHeader()));
+    /** A player paused the game (menu); `paused` is a dropped phone. */
+    this.held = false;
     this.view = /** @type {any} */ ({});
     this._applyDevParams();
   }
@@ -100,7 +109,7 @@ export class Game {
   _slot(id, num, goose) {
     return {
       id, num, kind: 'open', goose, buffer: new SeatBuffer(),
-      phone: { joined: false, motion: 'pending', calibrated: false, rateHz: 0, sim: null, ua: '' },
+      phone: { joined: false, motion: 'pending', calibrated: false, rateHz: 0, sim: null, ua: '', flipped: false },
       home: 'here', hold: new HoldPull(), keys: { pull: false, left: false, right: false }, botLag: 0, link: '',
       calib: {}, tempo: null, lastRoll: 0,
     };
@@ -127,7 +136,7 @@ export class Game {
     if (ev.k === 'camera') this.lastCamera = ev.mode;
     this.emitLocal(ev);
     if (this.guests.size) this.room?.toScreens({ t: 'ev', ev });
-    if (this.spike) this.spikeLog.push({ h: performance.now(), ev });
+    this.log.push({ h: Math.round(performance.now()), ev });
   }
 
   /** @param {keyof typeof LINES} key @param {number} [holdMs] */
@@ -235,6 +244,7 @@ export class Game {
     const info = SEATS[num - 1];
     this.room?.toPad(num, { t: 'seat', seat: num, color: info.color, label: `${GOOSE_NAMES[s.goose]} · ${info.label}` });
     this._sendMode(s);
+    this._menuKey = '';
     this.emit({ k: 'ui', sfx: 'join' });
   }
 
@@ -251,7 +261,7 @@ export class Game {
     const s = this.seatByNum(num);
     if (!s || !m) return;
     const now = performance.now();
-    if (this.spike && m.t !== 'raw') this.spikeLog.push({ h: now, seat: s.id, m });
+    if (m.t !== 'raw' && m.t !== 'ping') this.log.push({ h: Math.round(now), seat: s.id, m });
     switch (m.t) {
       case 'hello':
         s.phone.joined = true;
@@ -262,17 +272,24 @@ export class Game {
         s.phone.ua = m.ua || '';
         if (s.kind === 'open') s.kind = 'phone';
         this._sendMode(s);
+        this._menuKey = '';
         break;
       case 'calib': this._onCalib(s, m); break;
       case 'rev':
-        if (this.phase === 'calibrate' && this.calib.stage === 'clicks') this.calib.revs[s.id].push(m.at);
+        if (this.phase === 'calibrate' && this.calib.stage === 'clicks') {
+          this.calib.revs[s.id].push(m.at);
+          if (m.end > 0) this.calib.pulls[s.id].push(m.at);
+        }
         this.emit({ k: 'rev', seat: s.id, at: m.at - s.buffer.lagMs, end: m.end });
         break;
       case 'hit': this._onHit(s.id, m.at - s.buffer.lagMs, m.grade); break;
       case 'ok': this.safetyOk(); break;
       case 'next': if (this.phase === 'score' || this.phase === 'end') this.more(); break;
       case 'calib-progress': s.calib.progress = m.n + '/' + m.of; break;
-      case 'raw': if (this.spike) this.spikeLog.push({ h: now, seat: s.id, raw: m.s }); break;
+      case 'raw': if (this.spike) this.log.push({ h: Math.round(now), seat: s.id, raw: m.s }); break;
+      case 'menu': this.menu(m.id, s); break;
+      // The phone flipped its own stroke direction (its "wrong way" button).
+      case 'flipped': s.phone.flipped = !!m.on; this.say('flipped', 3000); break;
       default:
     }
   }
@@ -330,6 +347,7 @@ export class Game {
   _enterCalibrate() {
     this._setPhase('calibrate');
     this.calib.idx = 0;
+    this.calib.pullRetried = false;
     for (const s of Object.values(this.seats)) s.calib = {};
     this.say('calibrate');
     this._calibStep();
@@ -368,6 +386,7 @@ export class Game {
           this.calib.stage = 'clicks';
           this.calib.beat0 = now + 900;
           this.calib.revs = { A: [], B: [] };
+          this.calib.pulls = { A: [], B: [] };
           this.calib.at = now;
           const beatMs = 60000 / CLICK_BPM;
           this.song = null;
@@ -388,6 +407,16 @@ export class Game {
           s.buffer.lagMs = Math.max(-MAX_LAG_COMP_MS, Math.min(MAX_LAG_COMP_MS, lag ?? 0));
           s.calib.saw = lag === null ? 'fail' : 'ok';
           s.calib.lagMs = String(Math.round(lag ?? 0));
+          // A phone whose pulled ends land on its partner's clicks is the
+          // wrong way round: turn it (the phone flips itself and says so).
+          const pulls = this.calib.pulls[s.id].filter((t) => t > this.calib.beat0 + 1.5 * beatMs);
+          const par = pullParity(pulls, this.calib.beat0, beatMs, lag ?? 0, s.id);
+          s.calib.parity = par ? par.score.toFixed(2) : 'n/a';
+          if (par?.reversed) {
+            this.room?.toPad(s.num, { t: 'flip' });
+            s.calib.autoFlipped = 'yes';
+            this.say('flippedAuto', 4500);
+          }
         }
         this._nextCalib();
       }
@@ -396,6 +425,16 @@ export class Game {
     const done = seats.every((s) => s.calib[step] === 'ok' || s.calib[step] === 'fail');
     if (done || timedOut) {
       for (const s of seats) if (s.calib[step] === 'wait') s.calib[step] = 'fail';
+      // The pull sets which way is "toward you": never guess it. Once more
+      // for any phone that missed it.
+      const missed = seats.filter((s) => s.calib[step] === 'fail');
+      if (step === 'pull' && missed.length && !this.calib.pullRetried) {
+        this.calib.pullRetried = true;
+        this.calib.at = now;
+        this.say('pullAgain', 4500);
+        for (const s of missed) { s.calib.pull = 'wait'; this._sendMode(s, { again: true }); }
+        return;
+      }
       this._nextCalib();
     }
   }
@@ -465,7 +504,7 @@ export class Game {
 
   /** @param {SeatId} id @param {number} at @param {'soft'|'good'|'strong'} grade */
   _onHit(id, at, grade) {
-    if (this.phase !== 'notch') return;
+    if (this.phase !== 'notch' || this.held) return;
     const r = notchHit(this.notch, id, at, grade);
     const kind = r.kind === 'open' || r.kind === 'done' ? 'tok' : r.kind === 'clang' ? 'clang' : 'chip';
     this.emit({ k: 'hit', seat: id, kind, result: r.kind, notch: notchFrac(this.notch), lit: r.lit });
@@ -551,9 +590,126 @@ export class Game {
     this.treeIdx = 0;
     this.scores = [];
     this.song = null;
+    this.held = false;
+    this.emit({ k: 'held', on: false });
     this.emit({ k: 'song-stop' });
     this._setPhase('lobby');
     this.emit({ k: 'camera', mode: 'intro' });
+  }
+
+  // ---------------- pause and menus ----------------
+
+  /** Pause the tree (TV button, Esc, or a phone). Only while chopping or sawing. */
+  pause() {
+    if (this.held || (this.phase !== 'notch' && this.phase !== 'saw')) return;
+    this.held = true;
+    this.emit({ k: 'held', on: true });
+    this.emit({ k: 'ui', sfx: 'ui-ok' });
+    if (this.song) this.emit({ k: 'song-stop' });
+    for (const s of Object.values(this.seats)) this._sendMode(s);
+  }
+
+  resume() {
+    if (!this.held) return;
+    this.held = false;
+    this.emit({ k: 'held', on: false });
+    // The song starts again on a fresh downbeat; the stroke in progress is dropped.
+    if (this.song) {
+      this.song = { bpm: this.song.bpm, startH: performance.now() + 1200 };
+      this.emit({ k: 'song', ...this.song, silent: this.params.has('nosong') });
+    }
+    this.saw.dir = 0;
+    this.saw.lastT = NaN;
+    this.saw.overSince = NaN;
+    for (const s of Object.values(this.seats)) this._sendMode(s);
+    if (this.phase === 'notch') this._later(600, () => this._turn());
+  }
+
+  /** Start this tree again from the notch. */
+  restartTree() {
+    if (!this.held) return;
+    this.held = false;
+    this.emit({ k: 'held', on: false });
+    this.emit({ k: 'song-stop' });
+    this._startTree();
+  }
+
+  /**
+   * The buttons that make sense right now, for the TV and every phone, so a
+   * game can be run entirely from a phone. `local` items act on the phone.
+   * @returns {{id:string, label:string, primary?:boolean, local?:boolean}[]}
+   */
+  menuItems() {
+    const last = this.treeIdx >= TREES.length - 1;
+    const onePhone = this.seats.A.kind === 'phone' && this.seats.B.kind !== 'phone';
+    switch (this.phase) {
+      case 'lobby': {
+        /** @type {{id:string, label:string, primary?:boolean}[]} */
+        const items = [];
+        if (this.canStart()) items.push({ id: 'start', label: 'Start', primary: true });
+        if (onePhone && this.seats.B.kind === 'open') items.push({ id: 'solo', label: 'Saw with Grandma' });
+        if (this.seats.B.kind === 'grandma') items.push({ id: 'duo', label: 'A partner instead' });
+        return items;
+      }
+      case 'safety': return [{ id: 'safety-ok', label: 'Got it', primary: true }];
+      case 'intro': return [{ id: 'skip-intro', label: 'Skip' }];
+      case 'calibrate': return [{ id: 'flip', label: 'My hand goes the wrong way', local: true }, { id: 'skip-calib', label: 'Skip the lesson' }];
+      case 'notch': case 'saw':
+        return this.held
+          ? [{ id: 'resume', label: 'Resume', primary: true }, { id: 'flip', label: 'My hand goes the wrong way', local: true }, { id: 'restart', label: 'Start this tree again' }, { id: 'lobby', label: 'Stop — back to the lobby' }]
+          : [{ id: 'pause', label: 'Pause' }];
+      case 'score':
+        return last
+          ? [{ id: 'more', label: 'One more tree', primary: true }, { id: 'finish', label: 'Finish' }, { id: 'lobby', label: 'Back to the lobby' }]
+          : [{ id: 'next', label: 'Next tree', primary: true }, { id: 'lobby', label: 'Back to the lobby' }];
+      case 'end': return [{ id: 'more', label: 'One more tree', primary: true }, { id: 'lobby', label: 'Back to the lobby' }];
+      default: return [];
+    }
+  }
+
+  /**
+   * A menu choice from a phone (or the TV). Only choices on the current menu
+   * count, so a stale tap can't do something else.
+   * @param {string} id @param {SeatSlot} [from]
+   */
+  menu(id, from) {
+    if (!this.menuItems().some((i) => i.id === id)) return;
+    switch (id) {
+      case 'start': this.start(); break;
+      case 'solo': this.useGrandma(true); break;
+      case 'duo': this.useGrandma(false); break;
+      case 'safety-ok': this.safetyOk(); break;
+      case 'skip-intro': this.skipIntro(); break;
+      case 'skip-calib': this.skipCalibration(); break;
+      case 'pause': this.pause(); break;
+      case 'resume': this.resume(); break;
+      case 'restart': this.restartTree(); break;
+      case 'next': this.next(); break;
+      case 'more': this.more(); break;
+      case 'finish': this.finish(); break;
+      case 'lobby': this.toLobby(); break;
+      default:
+    }
+  }
+
+  /** Phones get the menu whenever it changes. */
+  _syncMenu() {
+    const items = this.menuItems();
+    const key = this.phase + JSON.stringify(items);
+    if (key === this._menuKey) return;
+    this._menuKey = key;
+    this.room?.toPad(null, { t: 'menu', items });
+  }
+
+  /**
+   * The beat for the hand cues: the song's while sawing, the clicks' in the
+   * lesson's click stage, none otherwise.
+   * @param {number} tEval @param {number} bp
+   */
+  _handBeat(tEval, bp) {
+    if (this.phase === 'saw' && Number.isFinite(bp)) return r4(bp);
+    if (this.phase === 'calibrate' && this.calib.stage === 'clicks') return r4((tEval - this.calib.beat0) / (60000 / CLICK_BPM));
+    return null;
   }
 
   /**
@@ -584,7 +740,8 @@ export class Game {
       const step = CALIB_STEPS[this.calib.idx];
       const mine = s.calib[step] !== undefined && s.phone.motion === 'ok';
       mode = mine ? 'calib-' + step : 'idle';
-    } else if (this.phase === 'notch') mode = 'chop';
+    } else if (this.held) mode = 'held';
+    else if (this.phase === 'notch') mode = 'chop';
     else if (this.phase === 'saw') mode = 'saw';
     else if (this.phase === 'safety') mode = 'safety';
     else if (this.phase === 'score' || this.phase === 'end') mode = 'between';
@@ -646,10 +803,11 @@ export class Game {
       this.emit({ k: 'paused', on: stale });
     }
 
-    if (this.spike && (this.phase === 'saw' || this.phase === 'notch')) {
-      this.spikeLog.push({ h: Math.round(now), f: [Math.round(tEval), r4(h.A.p), r4(h.B.p), r4(this.saw.s), r4(this.saw.e), r4(bp)] });
+    if ((this.phase === 'saw' || this.phase === 'notch' || this.phase === 'calibrate') && now - this.lastLogFrame >= 16) {
+      this.lastLogFrame = now;
+      this.log.push({ h: Math.round(now), f: [Math.round(tEval), r4(h.A.p), r4(h.B.p), r4(this.saw.s), r4(this.saw.e), r4(bp)] });
     }
-    if (this.phase === 'saw' && !this.paused) {
+    if (this.phase === 'saw' && !this.paused && !this.held) {
       // Step the saw at a fixed rate from where it was to the matched time,
       // reading both handles at each step, so the cut never depends on how
       // fast this screen renders (a TV at 30 fps cuts like a laptop at 120).
@@ -694,8 +852,8 @@ export class Game {
       paused: this.paused,
       s: this.saw.s,
       e: this.saw.e,
-      zone,
-      blame: zone === 'green' ? null : this._blame(h, bp),
+      zone: this.held ? 'green' : zone,
+      blame: zone === 'green' || this.held ? null : this._blame(h, bp),
       lean,
       cutFrac: cutFrac(this.cut),
       notchFrac: notchFrac(this.notch),
@@ -718,9 +876,16 @@ export class Game {
       lobby: this.phase === 'lobby' ? this._lobbyView() : null,
       calib: this.phase === 'calibrate' ? this._calibView(now) : null,
       evalLagMs: Math.round(now - tEval),
+      // Each hand where its phone says it is (at the judged time) and the
+      // beat there: the HUD draws them under each goose against where they
+      // should be. In the lesson's click stage the clicks are the beat.
+      hands: { A: r4(h.A.p), B: r4(h.B.p), bp: this.held ? null : this._handBeat(tEval, bp) },
+      held: this.held,
+      menu: this.menuItems(),
       seats: this._seatsView(),
     };
     this.view = view;
+    this._syncMenu();
     if (this.guests.size && now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
       const { lobby, ...rest } = view;
@@ -817,16 +982,19 @@ export class Game {
     return Object.values(this.seats).map((s) => ({ id: s.id, kind: s.kind, goose: s.goose, name: GOOSE_NAMES[s.goose], lagMs: Math.round(s.buffer.lagMs), stale: s.kind === 'phone' && s.buffer.isStale(performance.now()) }));
   }
 
-  /** The spike log (PLAN §13.1): every phone message, raw samples, events. */
-  spikeDump() {
+  _logHeader() {
     return {
       at: new Date().toISOString(),
+      spike: this.spike,
       seats: Object.values(this.seats).map((s) => ({ id: s.id, kind: s.kind, phone: s.phone, lagMs: s.buffer.lagMs, tempo: s.tempo, calib: s.calib })),
       scores: this.scores,
-      log: this.spikeLog,
       saw: SAW,
+      frameCols: ['tEval', 'pA', 'pB', 's', 'e', 'beatPos'],
     };
   }
+
+  /** The test log (PLAN §13.1): this session, or the last saved one if this page is fresh. */
+  spikeDump() { return this.log.dump(this._logHeader()); }
 }
 
 function r4(x) { return Math.round(x * 1e4) / 1e4; }

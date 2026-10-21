@@ -18,6 +18,7 @@ export const LINES = {
   notchClang: [['Old Misery', 'CLANG. Lovely. Very musical.'], ['Grandma', 'Not both at once, dears!']],
   notchGlance: [['Grandma', 'Right on the glowing face, dear. Small and square.']],
   sawStart: [
+    ['Grandma', 'Watch under your goose, dears: BACK, then FORWARD. When one goes back, the other goes forward.'],
     ['Old Misery', 'Pull to ya… now let ’er go…'],
     ['Old Misery', 'Bigger tree. Same rhythm. Don’t rush me.'],
   ],
@@ -38,6 +39,9 @@ export const LINES = {
   scoreHigh: [['Old Misery', 'Well-tempered. I could get used to you two.']],
   scoreMid: [['Grandma', 'Temper, dears. But not bad at all.']],
   scoreLow: [['Old Misery', 'Hrrmph. I’ve had gentler days at the steam mill.'], ['Grandma', 'A lively one. We’ll make sawyers of you yet.']],
+  pullAgain: [['Grandma', 'Once more, dear: one slow pull toward your belly, then hold it there.']],
+  flippedAuto: [['Grandma', 'One of you had your handle back to front — I’ve turned it round. Watch your dot.']],
+  flipped: [['Grandma', 'There — I’ve turned your handle round. Back is back now.']],
   partnerGone: [['Old Misery', 'Hold up… where’d they go?']],
   end: [['Grandma', 'That’s the woodpile started. Same time tomorrow?']],
 };

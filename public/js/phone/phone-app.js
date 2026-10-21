@@ -33,12 +33,9 @@ const ui = {
   touchBtn: /** @type {HTMLButtonElement} */ ($('use-touch')),
   pad: $('pad'),
   status: $('status'),
-  action: /** @type {HTMLButtonElement} */ ($('action')),
+  menu: $('menu'),
+  pause: /** @type {HTMLButtonElement} */ ($('pause')),
 };
-ui.action.addEventListener('click', () => {
-  app.relay?.send({ t: app.mode === 'safety' ? 'ok' : 'next' });
-  buzz(15);
-});
 
 const pair = parsePairFragment(location.hash);
 const app = {
@@ -49,7 +46,7 @@ const app = {
   clock: new ClockSync(),
   tracker: new StrokeTracker(),
   hatchet: new HatchetDetector({ peak: CHOP.DEFAULT_PEAK }),
-  /** @type {import('../core/stroke-tracker.js').StrokeProfile & {chopPeak:number, pullDir?: import('../core/vec.js').Vec3|null}} */
+  /** @type {import('../core/stroke-tracker.js').StrokeProfile & {chopPeak:number, pullDir?: import('../core/vec.js').Vec3|null, flipped?: boolean}} */
   profile: { ...defaultProfile(), chopPeak: CHOP.DEFAULT_PEAK, pullDir: null },
   /** @type {'motion'|'touch'|null} */
   input: null,
@@ -74,6 +71,8 @@ const app = {
   _pingId: 0,
   _touchX0: 0,
   _downT: 0,
+  /** @type {{id:string, label:string, primary?:boolean, local?:boolean}[]} */
+  menu: [],
 };
 
 if (!pair) {
@@ -139,6 +138,14 @@ function onHostMessage(m) {
     case 'mode':
       setMode(m.mode, m);
       break;
+    case 'menu':
+      renderMenu(m.items || []);
+      break;
+    case 'flip':
+      // The lesson found this phone's pull backwards.
+      localAction('flip');
+      buzz([30, 40, 30]);
+      break;
     case 'turn':
       if (m.seat === app.seat) { buzz(25); app.sim?.myTurn(); }
       break;
@@ -164,6 +171,7 @@ function sendHello() {
 
 ui.start.addEventListener('click', async () => {
   ui.start.disabled = true;
+  lockPortrait();
   try { /** @type {any} */ (navigator).audioSession && (/** @type {any} */ (navigator).audioSession.type = 'playback'); } catch { /* old Safari */ }
   keepAwake();
   if (params.get('sim')) return startSim();
@@ -284,25 +292,95 @@ function setMode(mode, info) {
   app.modeInfo = info || {};
   if (changed || info?.song) app.sim?.setMode(mode, info);
   // The host re-sends the same mode (e.g. the saw step's click stage): keep going.
-  if (mode.startsWith('calib-') && changed) beginCalib(mode);
+  if (mode.startsWith('calib-') && (changed || info?.again)) beginCalib(mode);
   const text = {
     lobby: ['Look at the TV', 'Waiting for everyone.'],
     'calib-rest': ['Hold still', 'Firm fist, phone like a saw handle.'],
-    'calib-pull': ['Pull to your belly', 'One slow pull, then stop.'],
-    'calib-saw': ['Saw the air', 'Small smooth strokes. Pull, then let go.'],
+    'calib-pull': ['Pull to your belly', 'One slow pull, then hold it there.'],
+    'calib-saw': ['Saw the air', 'Back to you, then forward. Watch your hand on the TV.'],
     'calib-twist': ['Twist your fist →', 'Toward the right side of the TV.'],
     'calib-chop': ['Three small chops', 'Below your shoulders. Wrist and forearm.'],
     safety: ['Safety first', 'Read the card on the TV, then tap Got it.'],
-    between: ['Timber!', 'Tap for one more tree.'],
-    saw: ['Saw!', 'Pull to you, let your partner pull it back.'],
+    between: ['Timber!', 'What next?'],
+    held: ['Paused', 'Old Misery waits.'],
+    saw: ['Saw!', 'Back, then forward. Follow the cue under your goose.'],
     chop: ['Chop on your turn', 'Your side glows on the TV.'],
     idle: ['Look at the TV', ''],
   }[mode] || ['Look at the TV', ''];
   if (app.input !== 'touch') setScreen(text[0], text[1]);
   ui.root.dataset.mode = mode;
-  // Between trees and on the safety card the phone is face-up: one big button.
-  ui.action.hidden = !(mode === 'safety' || mode === 'between');
-  ui.action.textContent = mode === 'safety' ? 'Got it' : 'One more tree';
+  renderMenu(app.menu);
+}
+
+// ---------- menus: the TV's choices, on the phone ----------
+
+/**
+ * The host sends the buttons that make sense right now; the phone shows them
+ * so a game can be run from the couch. While the phone is a tool (chopping,
+ * sawing) the only one is Pause, small and press-and-hold, so a fist can't
+ * pause by accident.
+ * @param {{id:string, label:string, primary?:boolean, local?:boolean}[]} items
+ */
+function renderMenu(items) {
+  app.menu = items;
+  const tool = app.mode === 'saw' || app.mode === 'chop';
+  const pause = items.find((i) => i.id === 'pause');
+  ui.pause.hidden = !(tool && pause);
+  const list = tool ? [] : items;
+  ui.menu.innerHTML = '';
+  for (const it of list) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = it.label;
+    b.className = it.primary ? 'primary' : '';
+    b.dataset.id = it.id;
+    b.addEventListener('click', () => {
+      buzz(15);
+      if (it.local) return localAction(it.id);
+      app.relay?.send({ t: 'menu', id: it.id });
+    });
+    ui.menu.appendChild(b);
+  }
+  ui.menu.hidden = !list.length;
+}
+
+// Pause while sawing: press and hold for half a second.
+{
+  let timer = 0;
+  const cancel = () => { clearTimeout(timer); ui.pause.classList.remove('arming'); };
+  ui.pause.addEventListener('pointerdown', (ev) => {
+    ev.stopPropagation();
+    ui.pause.classList.add('arming');
+    timer = window.setTimeout(() => { cancel(); buzz(30); app.relay?.send({ t: 'menu', id: 'pause' }); }, 550);
+  });
+  for (const e of ['pointerup', 'pointercancel', 'pointerleave']) ui.pause.addEventListener(e, cancel);
+}
+
+/** @param {string} id */
+function localAction(id) {
+  if (id === 'flip') {
+    // "My hand goes the wrong way": turn this phone's stroke direction round.
+    const p = app.profile;
+    p.axis = /** @type {any} */ (p.axis.map((x) => -x));
+    if (p.pullDir) p.pullDir = /** @type {any} */ (p.pullDir.map((x) => -x));
+    p.flipped = !p.flipped;
+    app.tracker.setProfile({ ...app.tracker.profile, axis: p.axis });
+    app.tracker.reset({ keepLearned: true });
+    saveProfile();
+    app.relay?.send({ t: 'flipped', on: !!p.flipped });
+  }
+}
+
+/** Android rotates the page on a quick twist, and Chrome pauses motion while it does: hold portrait. */
+function lockPortrait() {
+  try {
+    const el = /** @type {any} */ (document.documentElement);
+    const orient = /** @type {any} */ (screen).orientation;
+    if (!el.requestFullscreen || !orient?.lock) return;
+    el.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => orient.lock('portrait'))
+      .catch(() => { /* not allowed here: the tip covers it */ });
+  } catch { /* old browser */ }
 }
 
 /** @param {string} mode */
@@ -316,7 +394,7 @@ function beginCalib(mode) {
   c.lastMove = 0;
   if (app.input === 'touch') return reportCalib(mode.slice(6), true, { touch: true });
   if (mode === 'calib-rest') { c.gs = []; c.quiet = 0; }
-  if (mode === 'calib-pull') { c.pull = []; }
+  if (mode === 'calib-pull') { c.pull = []; c.peak = 0; c.peakT = 0; }
   if (mode === 'calib-saw') { c.accs = []; c.axisSet = false; app.tracker.reversals.length = 0; }
   if (mode === 'calib-twist') { c.rolls = []; app.tracker.setProfile({ ...app.tracker.profile, rollSign: 1 }); }
   if (mode === 'calib-chop') { c.chops = []; app.hatchet.reset(); }
@@ -337,15 +415,22 @@ function calibrate(m) {
     }
   } else if (mode === 'calib-pull') {
     c.pull.push({ t: m.t, a: m.a });
-    const moving = Math.hypot(...m.a) > 0.5;
-    if (moving) c.lastMove = m.t;
-    const moved = c.pull.some((s) => Math.hypot(...s.a) > 1.2);
-    // The pull is over when the hand has been still for 350 ms after moving.
-    if (moved && m.t - (c.lastMove || m.t) > 350) {
-      const d = pullDirection(c.pull);
+    const mag = Math.hypot(...m.a);
+    if (mag > c.peak) { c.peak = mag; c.peakT = m.t; }
+    const moved = c.peak > 1.2;
+    // A hand held in the air is never still: the pull is over once the hand
+    // has settled well below its peak for 250 ms (or time is nearly up).
+    if (mag > Math.max(0.6, 0.25 * c.peak)) c.lastMove = m.t;
+    const settled = moved && m.t - c.lastMove > 250;
+    const late = moved && since > 5600;
+    if (settled || late) {
+      // Just the move: from before it started to when it settled.
+      const end = settled ? m.t : c.peakT + 700;
+      const d = pullDirection(c.pull.filter((x) => x.t >= c.peakT - 1200 && x.t <= end));
       if (d) { app.profile.pullDir = d; reportCalib('pull', true); }
+      else if (late) reportCalib('pull', false, { why: 'unclear pull', peak: Math.round(c.peak * 10) / 10 });
     }
-    if (since > 6000) reportCalib('pull', false, { why: 'no pull seen' });
+    if (since > 6500) reportCalib('pull', false, { why: moved ? 'unclear pull' : 'no pull seen', peak: Math.round(c.peak * 10) / 10 });
   } else if (mode === 'calib-saw') {
     if (!c.axisSet) {
       if (Math.hypot(...m.a) > 0.6) c.accs.push(m.a);

@@ -10,7 +10,7 @@
 // Renders only from the view + events, so host and guest screens match.
 // ============================================================
 
-import { SAW } from '../core/saw-model.js';
+import { SAW, targetS } from '../core/saw-model.js';
 import { SEATS, CODE_PREFIX } from '../core/protocol.js';
 import { MAX_FALL_DEG } from '../core/tree.js';
 
@@ -24,6 +24,8 @@ export class Hud {
     this.role = o.role;
     this.blade = /** @type {HTMLCanvasElement} */ ($('blade'));
     this.beat = /** @type {HTMLCanvasElement} */ ($('beats'));
+    this.hands = /** @type {HTMLCanvasElement} */ ($('hands'));
+    this.calibHands = /** @type {HTMLCanvasElement} */ ($('calib-hands'));
     this.bctx = /** @type {CanvasRenderingContext2D} */ (this.blade.getContext('2d'));
     this.sctx = /** @type {CanvasRenderingContext2D} */ (this.beat.getContext('2d'));
     /** @type {{seat:'A'|'B', at:number}[]} */
@@ -131,6 +133,12 @@ export class Hud {
     $('lobby').hidden = v.phase !== 'lobby';
     if (v.phase === 'calibrate' && v.calib) this.renderCalib(v.calib);
     $('calib').hidden = v.phase !== 'calibrate';
+    const lessonSaw = v.phase === 'calibrate' && v.calib?.step === 'saw';
+    this.calibHands.hidden = !lessonSaw;
+    if (lessonSaw) this.drawHands(this.calibHands, v);
+    $('held').hidden = !v.held;
+    if (v.held) this.renderHeld(v.menu || []);
+    /** @type {any} */ ($('pause-btn')).hidden = this.role !== 'host' || v.held || !(v.phase === 'notch' || v.phase === 'saw');
     $('intro-skip').hidden = v.phase !== 'intro' || this.role !== 'host';
     if (!playing && v.phase !== 'fall') return;
 
@@ -147,6 +155,8 @@ export class Hud {
     for (const k of /** @type {const} */ (['A', 'B', 'bite', 'tantrum'])) this.flash[k] = Math.max(0, this.flash[k] - dtMs / 450);
     /** @type {HTMLElement} */ ($('beats')).style.visibility = v.phase === 'saw' && !v.silentSong ? 'visible' : 'hidden';
     if (v.phase === 'saw') this.drawBlade(v); else this.drawNotch(v);
+    this.hands.style.display = v.phase === 'saw' ? 'block' : 'none';
+    if (v.phase === 'saw') this.drawHands(this.hands, v);
     this.drawBeats(v, nowH);
     this.drawDial(v);
   }
@@ -247,6 +257,78 @@ export class Hud {
       g.beginPath(); g.arc(W / 2, midY + 14 * k, (10 + 16 * (1 - this.flash.bite)) * k, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
     }
+  }
+
+  /**
+   * The hand cues, one under each goose (A left, B right): the word for what
+   * that hand should do now (BACK = pull to your belly, FORWARD = let it go
+   * toward the tree), a ring where the hand should be on the beat, and a dot
+   * where the phone says it is. The two hands always move opposite ways; on
+   * the TV both dots slide the same way as the blade.
+   * @param {HTMLCanvasElement} c @param {any} v
+   */
+  drawHands(c, v) {
+    const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+    const W = (c.width = c.clientWidth * devicePixelRatio), H = (c.height = c.clientHeight * devicePixelRatio);
+    g.clearRect(0, 0, W, H);
+    const hands = v.hands;
+    if (!hands) return;
+    const k = devicePixelRatio;
+    const bp = hands.bp;
+    const ts = bp === null || bp === undefined || bp < 0 ? null : targetS(bp);
+    const R = W * 0.11, railY = H * 0.68;
+    for (const id of /** @type {const} */ (['A', 'B'])) {
+      const cx = id === 'A' ? W * 0.2 : W * 0.8;
+      // Screen side of "back": A pulls toward the left, B toward the right.
+      const backDir = id === 'A' ? -1 : 1;
+      const xOf = (p) => cx + backDir * p * R;
+      // Rail with its two ends named.
+      g.strokeStyle = 'rgba(255,255,255,.25)';
+      g.lineWidth = 3 * k;
+      line(g, cx - R, railY, cx + R, railY);
+      g.font = `600 ${11 * k}px system-ui, sans-serif`;
+      g.fillStyle = 'rgba(246,234,216,.6)';
+      g.textBaseline = 'middle';
+      g.textAlign = backDir < 0 ? 'right' : 'left';
+      g.fillText('back', cx + backDir * (R + 8 * k), railY);
+      g.textAlign = backDir < 0 ? 'left' : 'right';
+      g.fillText('fwd', cx - backDir * (R + 8 * k), railY);
+      // Where this hand should be, and the word for where it's going.
+      let word = '';
+      if (ts !== null) {
+        const want = id === 'A' ? ts : -ts;
+        g.strokeStyle = '#fff';
+        g.lineWidth = 2.5 * k;
+        g.beginPath(); g.arc(xOf(want), railY, 12 * k, 0, Math.PI * 2); g.stroke();
+        // A heads back on beats 2k→2k+1, B on 2k+1→2k+2.
+        const phase = ((Math.floor(bp) % 2) + 2) % 2;
+        const goingBack = id === 'A' ? phase === 0 : phase === 1;
+        word = goingBack ? 'BACK' : 'FORWARD';
+      }
+      // Where the phone says the hand is.
+      const p = Math.max(-1, Math.min(1, hands[id] ?? -1));
+      g.fillStyle = COLOR[id];
+      g.beginPath(); g.arc(xOf(p), railY, 8 * k, 0, Math.PI * 2); g.fill();
+      if (word) {
+        g.font = `900 ${22 * k}px system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'alphabetic';
+        g.fillStyle = COLOR[id];
+        const arrow = (word === 'BACK') === (backDir < 0) ? '← ' : '';
+        const arrowR = arrow ? '' : ' →';
+        g.fillText(arrow + word + arrowR, cx, H * 0.36);
+      }
+    }
+    g.textBaseline = 'alphabetic';
+  }
+
+  /** The pause sheet on the TV: the same choices as the phones (minus the phone-only ones). @param {any[]} items */
+  renderHeld(items) {
+    const key = JSON.stringify(items) + this.role;
+    if (key === this._heldKey) return;
+    this._heldKey = key;
+    $('held-actions').innerHTML = this.role !== 'host' ? '<div class="muted">Paused by the other home.</div>'
+      : items.filter((i) => !i.local).map((i) => `<uf-button data-action="menu" data-arg="${esc(i.id)}" label="${esc(i.label)}" variant="${i.primary ? 'accent' : 'ghost'}" size="lg"></uf-button>`).join('');
   }
 
   /** The notch widget: two faces, the lit one glows in its player's color. */
