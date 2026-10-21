@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en" data-phase="title">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1b1410">
+<title>Timber Tandem</title>
+<meta name="description" content="Two geese, one crosscut saw. Keep your temper.">
+<link rel="stylesheet" href="lib/ui/tokens.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+} }
+</script>
+<style>
+  :root {
+    /* Timber Tandem palette over the House Tandem tokens. */
+    --uf-color-accent: #f2b24c; --uf-color-accent-soft: rgba(242,178,76,.22); --uf-color-accent-line: rgba(242,178,76,.6);
+    --uf-color-fg-on-accent: #241507; --uf-color-team-a: #e8743b; --uf-color-team-b: #3b9be8;
+    --uf-color-surface: #2a1d14; --uf-color-surface-2: #33241a; --uf-color-surface-3: #3b2a1e;
+    --a: #e8743b; --b: #3b9be8; --ink: #f6ead8; --wood: #2a1d14; --green: #7ee08a; --red: #ff5a4a;
+    --serif: 'Georgia', 'Times New Roman', serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1410; color: var(--ink); font-family: var(--uf-font-ui); }
+  #scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  [hidden] { display: none !important; }
+  .muted { color: rgba(246,234,216,.72); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--seat); display: inline-block; flex: none; }
+
+  /* ---------- logo ---------- */
+  .logo { font-family: var(--serif); letter-spacing: .04em; line-height: .9; text-shadow: 0 3px 0 rgba(0,0,0,.35); }
+  .logo .w1 { display: block; font-size: clamp(44px, 7vw, 104px); color: #f6d28b; }
+  .logo .w2 { display: block; font-size: clamp(44px, 7vw, 104px); color: #fff; transition: color .2s; }
+  .logo .w2.tantrum { color: var(--red); animation: shake .3s 3; }
+  .tagline { font-family: var(--serif); font-style: italic; font-size: clamp(18px, 2vw, 28px); opacity: .9; margin-top: 10px; }
+  @keyframes shake { 25% { transform: translateX(-6px) rotate(-2deg); } 75% { transform: translateX(6px) rotate(2deg); } }
+
+  /* ---------- panels ---------- */
+  .panel { position: fixed; z-index: 20; background: rgba(27,20,16,.86); backdrop-filter: blur(6px); border: 1px solid rgba(246,234,216,.14); border-radius: 22px; box-shadow: 0 30px 80px -20px rgba(0,0,0,.7); }
+  #title { inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 35%, rgba(60,36,18,.55), rgba(20,13,9,.92)); border: 0; border-radius: 0; }
+  #title .inner { text-align: center; padding: 24px; max-width: 760px; }
+  #title .actions { display: flex; gap: 14px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
+  #title .small { margin-top: 26px; font-size: 14px; opacity: .65; }
+  #title-join .actions { margin-top: 18px; }
+
+  #lobby { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 26px 28px; }
+  #lobby h1 { margin: 0 0 4px; font-family: var(--serif); font-weight: 400; font-size: clamp(26px, 2.6vw, 38px); }
+  #lobby-seats { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+  .seat-card { border-radius: 18px; padding: 16px; background: color-mix(in srgb, var(--seat) 10%, #2a1d14); border: 2px solid color-mix(in srgb, var(--seat) 55%, transparent); display: flex; flex-direction: column; gap: 10px; min-height: 360px; }
+  .seat-card header { display: flex; align-items: center; gap: 10px; font-size: 18px; }
+  .seat-card header .who { margin-left: auto; font-family: var(--serif); font-size: 20px; color: color-mix(in srgb, var(--seat) 60%, white); }
+  .seat-body { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; }
+  .seat-big { font-size: 26px; font-weight: 700; }
+  .seat-opts { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .invite { margin-top: 16px; padding: 14px; border-radius: 16px; background: rgba(0,0,0,.25); display: grid; gap: 10px; justify-items: center; text-align: center; }
+  .lobby-foot { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 18px; flex-wrap: wrap; }
+  .lobby-foot .tips { font-size: 14px; max-width: 46em; }
+
+  #calib { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(820px, calc(100vw - 32px)); padding: 28px 32px; text-align: center; }
+  #calib-step { font-size: 14px; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
+  #calib-title { font-family: var(--serif); font-size: clamp(30px, 3.4vw, 50px); margin: 6px 0 8px; }
+  #calib-text { font-size: clamp(17px, 1.5vw, 22px); line-height: 1.4; }
+  #calib-seats { display: flex; gap: 18px; justify-content: center; margin: 20px 0 6px; flex-wrap: wrap; }
+  .calib-seat { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: color-mix(in srgb, var(--seat) 16%, transparent); font-size: 18px; }
+  .calib-art { height: 120px; display: grid; place-items: center; margin: 14px 0 6px; }
+  .fist { width: 46px; height: 92px; border-radius: 18px; background: linear-gradient(160deg, #f6d28b, #e8743b); box-shadow: inset 0 -8px 0 rgba(0,0,0,.2); }
+  html[data-calib="saw"] .fist, html[data-calib="pull"] .fist { animation: sawy 1.25s ease-in-out infinite; }
+  html[data-calib="twist"] .fist { animation: twisty 1.6s ease-in-out infinite; }
+  html[data-calib="chop"] .fist { animation: choppy .7s ease-in infinite; transform-origin: 50% 90%; }
+  @keyframes sawy { 50% { transform: translateY(30px); } }
+  @keyframes twisty { 50% { transform: rotate(35deg); } }
+  @keyframes choppy { 40% { transform: rotate(-35deg); } 60% { transform: rotate(10deg); } }
+
+  /* ---------- in-game HUD ---------- */
+  #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+  .top { position: absolute; top: 18px; left: 22px; right: 22px; display: flex; align-items: flex-start; gap: 18px; }
+  #tree-name { font-family: var(--serif); font-size: clamp(20px, 2vw, 30px); text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #turn { font-size: clamp(18px, 1.7vw, 26px); font-weight: 800; margin-top: 4px; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
+  .temper { margin-left: auto; text-align: right; background: rgba(27,20,16,.7); border-radius: 16px; padding: 10px 16px; min-width: 210px; }
+  .temper .lbl { font-size: 12px; letter-spacing: .12em; opacity: .75; }
+  .temper .num { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .temper .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; margin-top: 6px; }
+  #temper-bar { height: 100%; background: linear-gradient(90deg, #f2b24c, var(--green)); width: 100%; transition: width .2s; }
+  .temper .tan { font-size: 14px; margin-top: 6px; opacity: .85; }
+  #streak { font-size: 14px; color: #f6d28b; min-height: 1em; }
+  .bottom { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(1100px, calc(100vw - 32px)); display: grid; grid-template-columns: 1fr 64px; gap: 14px; align-items: end; }
+  .gauge { background: rgba(27,20,16,.72); border-radius: 20px; padding: 10px 14px 8px; }
+  #blade { width: 100%; height: 120px; display: block; }
+  #beats { width: 100%; height: 56px; display: block; margin-top: 4px; }
+  .cut { height: 186px; background: rgba(27,20,16,.72); border-radius: 18px; position: relative; overflow: hidden; display: grid; align-items: end; }
+  #cut-fill { background: linear-gradient(0deg, #8a5a2b, #f2b24c); width: 100%; height: 0%; transition: height .2s; }
+  #cut-label { position: absolute; top: 8px; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 700; }
+  .dial { position: absolute; right: 22px; bottom: 236px; width: 150px; height: 84px; background: rgba(27,20,16,.72); border-radius: 80px 80px 14px 14px; overflow: hidden; }
+  .dial .lbl { position: absolute; bottom: 6px; width: 100%; text-align: center; font-size: 11px; letter-spacing: .1em; opacity: .7; }
+  #dial-needle, #dial-target { position: absolute; left: calc(50% - 2px); bottom: 18px; width: 4px; height: 56px; transform-origin: 50% 100%; border-radius: 2px; transition: transform .15s; }
+  #dial-needle { background: #fff; }
+  #dial-target { background: var(--green); opacity: .8; width: 10px; left: calc(50% - 5px); }
+  #caption { position: fixed; z-index: 15; left: 50%; bottom: 252px; transform: translate(-50%, 12px); opacity: 0; transition: opacity .25s, transform .25s; background: rgba(27,20,16,.88); border-radius: 18px; padding: 12px 20px; max-width: min(860px, 90vw); pointer-events: none; text-align: center; }
+  #caption.show { opacity: 1; transform: translate(-50%, 0); }
+  html[data-phase="lobby"] #caption, html[data-phase="calibrate"] #caption { bottom: 24px; }
+  #caption-who { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #f6d28b; }
+  #caption-text { font-family: var(--serif); font-size: clamp(20px, 2vw, 30px); line-height: 1.25; }
+  .toast { position: fixed; z-index: 30; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(.8); opacity: 0; pointer-events: none; font-weight: 900; transition: opacity .2s, transform .25s; text-shadow: 0 6px 24px rgba(0,0,0,.6); }
+  .toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .toast.bad { color: var(--red); font-size: clamp(40px, 6vw, 90px); }
+  .toast.soft { color: #f6d28b; font-size: clamp(22px, 2.4vw, 34px); top: 30%; }
+  .toast.big { color: #fff; font-family: var(--serif); font-size: clamp(70px, 11vw, 170px); }
+  .toast.title { color: #fff; font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 5vw, 76px); top: 20%; }
+  #paused { position: fixed; z-index: 25; left: 50%; top: 18%; transform: translateX(-50%); background: rgba(27,20,16,.9); padding: 14px 22px; border-radius: 16px; font-size: 22px; }
+  #intro-skip { position: fixed; z-index: 25; right: 22px; bottom: 22px; }
+  #net { position: fixed; z-index: 40; left: 50%; top: 10px; transform: translateX(-50%); font-size: 14px; background: rgba(0,0,0,.6); border-radius: 10px; padding: 0 10px; }
+  #net:empty { display: none; }
+  .score-big { font-size: clamp(26px, 2.6vw, 40px); text-align: center; margin: 6px 0 18px; }
+  .score-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .end-row { font-size: 20px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .spike { position: fixed; z-index: 41; left: 10px; bottom: 10px; }
+  html:not([data-spike]) .spike { display: none; }
+  html[data-noscene] body { background: radial-gradient(ellipse at 50% 70%, #3d2a18, #140d09); }
+  @media (max-width: 760px) { #lobby-seats { grid-template-columns: 1fr; } .score-stats { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- Title -->
+  <div id="title" class="panel" hidden>
+    <div class="inner">
+      <div id="title-main">
+        <div class="logo"><span class="w1">TIMBER</span><span class="w2" id="logo-word">TANDEM</span></div>
+        <div class="tagline">One saw. Two handles. Keep your temper.</div>
+        <div class="actions">
+          <uf-button data-title="host" label="Play on this screen" sub="Phones are the saws" variant="accent" size="lg"></uf-button>
+          <uf-button data-title="join" label="Join a home" sub="Online duo, with a code" variant="ghost" size="lg"></uf-button>
+        </div>
+        <div class="small">Victorian geese, Grandma’s woodpile, and Old Misery, a crosscut saw with a famously short temper.</div>
+      </div>
+      <div id="title-join" hidden>
+        <div class="logo"><span class="w1" style="font-size:48px">Join a home</span></div>
+        <p class="muted">Enter the code on the other home’s screen.</p>
+        <uf-join-code id="join-code" mode="entry" code-prefix="TIMB-" length="5"></uf-join-code>
+        <uf-keypad id="join-keypad" for="join-code"></uf-keypad>
+        <div class="actions"><uf-button data-title="join-back" label="Back" variant="ghost"></uf-button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lobby -->
+  <div id="lobby" class="panel" hidden>
+    <h1>Grandma’s woodpile needs two</h1>
+    <div class="muted">Each player scans their handle’s code. One phone each — held in a firm fist, like a saw handle.</div>
+    <div id="guest-wait" class="muted" hidden>You’re joining the other home. Your phone takes the right handle.</div>
+    <div id="lobby-seats"></div>
+    <div id="lobby-invite"></div>
+    <div class="lobby-foot">
+      <div class="tips muted">Clear some space. Small strokes work — nothing rewards big ones. Use the TV or laptop speakers (Bluetooth is too slow for the beat).</div>
+      <uf-button id="start-btn" data-action="start" label="Start" sub="Enter" variant="accent" size="lg" disabled></uf-button>
+    </div>
+  </div>
+
+  <!-- Calibration -->
+  <div id="calib" class="panel" hidden>
+    <div id="calib-step"></div>
+    <div id="calib-title"></div>
+    <div class="calib-art"><div class="fist"></div></div>
+    <div id="calib-text"></div>
+    <div id="calib-seats"></div>
+    <uf-button id="calib-skip" data-action="skip-calib" label="Skip" variant="ghost" size="sm"></uf-button>
+  </div>
+
+  <!-- In-game HUD -->
+  <div id="hud" hidden>
+    <div class="top">
+      <div><div id="tree-name"></div><div id="turn"></div><div id="streak"></div></div>
+      <div class="temper">
+        <div class="lbl">TEMPER</div><div class="num" id="temper">100</div>
+        <div class="bar"><div id="temper-bar"></div></div>
+        <div class="tan">TANTRUMS <b id="tantrums">0</b></div>
+      </div>
+    </div>
+    <div class="dial"><div id="dial-target"></div><div id="dial-needle"></div><div class="lbl">AIM · SKID</div></div>
+    <div class="bottom">
+      <div class="gauge"><canvas id="blade"></canvas><canvas id="beats"></canvas></div>
+      <div class="cut"><div id="cut-label"></div><div id="cut-fill"></div></div>
+    </div>
+  </div>
+  <div id="caption"><div id="caption-who"></div><div id="caption-text"></div></div>
+  <div id="toast" class="toast"></div>
+  <div id="paused" hidden>Hold up… a phone dropped out. Old Misery waits.</div>
+  <uf-button id="intro-skip" data-action="skip-intro" label="Skip" variant="ghost" size="sm" hidden></uf-button>
+  <div id="net"></div>
+  <uf-button class="spike" data-action="spike-dl" label="Download spike log" variant="ghost" size="xs"></uf-button>
+
+  <!-- Score + end -->
+  <uf-sheet id="score" heading="" placement="center" size="lg" tone="gold" headline dismissible="false" hidden open>
+    <div id="score-title" style="font-family:var(--serif);font-size:34px;text-align:center"></div>
+    <div id="score-body"></div>
+    <div slot="actions"><uf-button id="score-next" data-action="next" label="Next tree" variant="accent" size="lg"></uf-button></div>
+  </uf-sheet>
+  <uf-sheet id="end" heading="The woodpile’s started" placement="center" size="md" tone="gold" dismissible="false" hidden open>
+    <div id="end-body"></div>
+    <div slot="actions"><uf-button id="end-again" data-action="again" label="Back to the lobby" variant="accent" size="lg"></uf-button></div>
+  </uf-sheet>
+
+  <script>if (new URLSearchParams(location.search).has('spike')) document.documentElement.dataset.spike = '1';</script>
+  <script type="module" src="js/screen/main.js"></script>
+</body>
+</html>

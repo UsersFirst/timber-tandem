@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1b1410">
+<title>Timber Tandem · Saw handle</title>
+<link rel="stylesheet" href="../lib/ui/tokens.css">
+<style>
+  :root { --seat: #e8743b; color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: #1b1410; color: #f6ead8; font-family: var(--uf-font, system-ui, sans-serif); overscroll-behavior: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { display: grid; grid-template-rows: auto 1fr auto; min-height: 100dvh; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; gap: 10px; font-size: 15px; letter-spacing: .04em; text-transform: uppercase; opacity: .85; }
+  header .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--seat); box-shadow: 0 0 0 3px color-mix(in srgb, var(--seat) 30%, transparent); }
+  main { display: grid; place-content: center; text-align: center; gap: 14px; padding: 12px 0; }
+  .handle { width: 86px; height: 150px; margin: 0 auto 8px; border-radius: 30px; background: linear-gradient(160deg, color-mix(in srgb, var(--seat) 85%, white), var(--seat)); box-shadow: inset 0 -10px 0 rgba(0,0,0,.18), 0 10px 30px rgba(0,0,0,.4); }
+  html[data-mode="saw"] .handle, html[data-mode="calib-saw"] .handle { animation: saw 1.25s ease-in-out infinite; }
+  @keyframes saw { 50% { transform: translateY(26px); } }
+  #line { font-size: clamp(28px, 8vw, 40px); font-weight: 800; line-height: 1.1; }
+  #sub { font-size: 18px; opacity: .8; max-width: 22em; margin: 0 auto; line-height: 1.35; }
+  #start { margin-top: 10px; font-size: 22px; font-weight: 800; padding: 18px 28px; border-radius: 999px; border: 0; background: var(--seat); color: #1b1410; }
+  #start:disabled { opacity: .6; }
+  #use-touch { background: none; border: 0; color: inherit; opacity: .7; text-decoration: underline; font-size: 15px; padding: 10px; }
+  #pad { position: fixed; inset: 30% 16px max(70px, env(safe-area-inset-bottom)); border-radius: 28px; border: 3px dashed color-mix(in srgb, var(--seat) 70%, transparent); display: grid; place-content: center; font-size: 22px; font-weight: 700; color: var(--seat); }
+  #pad.held { background: color-mix(in srgb, var(--seat) 35%, transparent); border-style: solid; }
+  footer { display: flex; justify-content: space-between; align-items: center; font-size: 13px; opacity: .65; }
+  /* While the phone is a tool, nobody's looking: keep it dark. */
+  html[data-mode="saw"] main, html[data-mode="chop"] main { opacity: .55; }
+</style>
+</head>
+<body>
+  <header><span class="dot"></span><span id="seat">Timber Tandem</span></header>
+  <main>
+    <div class="handle" aria-hidden="true"></div>
+    <div id="line">Connecting…</div>
+    <div id="sub"></div>
+    <div><button id="start" type="button">Pick up the saw</button></div>
+    <div><button id="use-touch" type="button">No motion? Saw by touch</button></div>
+  </main>
+  <div id="pad" hidden>Hold to pull</div>
+  <footer><span id="status">…</span><span>Timber Tandem</span></footer>
+  <script type="module" src="../js/phone/phone-app.js"></script>
+</body>
+</html>

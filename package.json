@@ -1,0 +1,18 @@
+{
+  "name": "timber-tandem",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Timber Tandem — two geese, one crosscut saw. Keep your temper.",
+  "scripts": {
+    "dev": "wrangler dev --ip 0.0.0.0 --port 8787",
+    "deploy": "wrangler deploy",
+    "test": "node --test \"test/unit/*.test.mjs\"",
+    "sync-lab": "node scripts/sync-lab.mjs",
+    "smoke": "node scripts/smoke-toy.mjs"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.43.1",
+    "wrangler": "^4.151.3"
+  }
+}
