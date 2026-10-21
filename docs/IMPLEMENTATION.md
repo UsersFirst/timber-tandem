@@ -162,6 +162,6 @@ Three reviews have been applied: correctness (15 findings), design fidelity agai
 ### Not done yet (needs real hardware or Pete)
 
 - **Real phones:** the spike and toy runs in `docs/PLAYTEST.md`.
-- **Deploy:** `npx wrangler login` once, then `npm run deploy`. Phones need HTTPS.
+- **Deploy:** live at https://timber-tandem.pete-872.workers.dev (`npm run deploy`; Claude may run it per `.claude/settings.json`).
 - **A real TV:** frame rate on a TV-class device. The laptop renders at 480–630 fps uncapped.
 - **Voice:** recorded lines for Grandma and Old Misery (captions only for now).
