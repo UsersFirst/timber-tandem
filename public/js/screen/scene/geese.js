@@ -300,19 +300,28 @@ export class Goose {
 
   /** Small cheap tweaks so the Georgian goose reads as Grandma: round spectacles and a warm shawl tint. */
   _dressGrandma() {
-    const head = this.bones.Head;
-    if (head) {
-      const mat = new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.9, roughness: 0.3 });
-      const ring = new THREE.TorusGeometry(0.028, 0.004, 6, 16);
-      const bridge = new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4);
-      const specs = new THREE.Group();
-      const l = new THREE.Mesh(ring, mat), r = new THREE.Mesh(ring, mat), br = new THREE.Mesh(bridge, mat);
-      l.position.set(0.035, 0, 0); r.position.set(-0.035, 0, 0); br.rotation.z = Math.PI / 2;
-      specs.add(l, r, br);
-      // Head bone space: the rig's head points +z (beak). Spectacles sit just above the beak base.
-      specs.position.set(0, 0.02 / this.scale, 0.11 / this.scale);
-      specs.scale.setScalar(1 / this.scale);
-      head.add(specs);
+    // Gold spectacles. A goose's eyes are on the sides of its head, so each
+    // lens sits over its own eye, facing out (a pair of side lenses, like
+    // pince-nez), found from the eye bones in the rest pose.
+    const head = this.bones.Head, eyes = [this.bones.LeftEye, this.bones.RightEye];
+    if (head && eyes[0] && eyes[1]) {
+      this.root.updateMatrixWorld(true);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.85, roughness: 0.3 });
+      const ring = new THREE.TorusGeometry(0.021, 0.003, 6, 20);
+      const hs = head.getWorldScale(new THREE.Vector3()).x;
+      const pL = eyes[0].getWorldPosition(new THREE.Vector3()), pR = eyes[1].getWorldPosition(new THREE.Vector3());
+      const mid = pL.clone().add(pR).multiplyScalar(0.5);
+      for (const p of [pL, pR]) {
+        const out = p.clone().sub(mid).normalize();
+        const at = p.clone().addScaledVector(out, 0.026);
+        const lens = new THREE.Mesh(ring, mat);
+        head.add(lens);
+        lens.position.copy(head.worldToLocal(at.clone()));
+        // Face the ring (its +z) outward, in head space.
+        const hq = head.getWorldQuaternion(new THREE.Quaternion()).invert();
+        lens.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), out.clone().applyQuaternion(hq).normalize());
+        lens.scale.setScalar(1 / hs);
+      }
     }
     // Warm the jacket's blue toward a heathery shawl.
     this.model.traverse((o) => {
