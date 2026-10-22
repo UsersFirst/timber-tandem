@@ -17,7 +17,7 @@ const args = process.argv.slice(2);
 const base = (args.find((a, i) => args[i - 1] === '--base')) || 'http://localhost:8787';
 const shots = args.includes('--shots');
 const wanted = args.filter((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--base');
-const ALL = ['bots', 'phones', 'reversed', 'lag', 'waggle', 'grandma', 'online', 'menus'];
+const ALL = ['bots', 'phones', 'reversed', 'lag', 'waggle', 'grandma', 'online', 'menus', 'menu-solo', 'menu-online'];
 const scenarios = wanted.length ? wanted : ALL;
 const outDir = path.resolve('scripts/out');
 fs.mkdirSync(outDir, { recursive: true });
@@ -59,6 +59,13 @@ async function waitFor(p, fn, { timeout = 60000, label = '' } = {}, ...a) {
 }
 
 const phase = (p) => p.evaluate(() => window.__game?.phase);
+
+/** A real click, on a page brought to the front first (the other page may be in front). */
+async function tapOn(p, sel) {
+  await p.bringToFront();
+  await p.waitForSelector(sel, { visible: true, timeout: 10000 });
+  await p.click(sel);
+}
 
 /** Open a phone page for a pairing link with ?sim=…, then tap start. */
 async function phone(link, sim, label, errors) {
@@ -160,8 +167,8 @@ async function run(name) {
       const link = await host.evaluate(() => window.__game.seats.A.link);
       const pa = await phone(link, 'good', 'phoneA', errors); pages.push(pa);
       const tap = async (id) => {
-        await waitFor(pa, (i) => !!document.querySelector(`#menu button[data-id="${i}"]`), { label: 'phone shows ' + id }, id);
-        await pa.click(`#menu button[data-id="${id}"]`);
+        // Find and tap in one step: the menu can be re-rendered between a find and a click.
+        await waitFor(pa, (i) => { const b = /** @type {HTMLElement|null} */ (document.querySelector(`#menu button[data-id="${i}"]`)); if (!b) return false; b.click(); return true; }, { label: 'phone shows ' + id }, id);
       };
       await tap('start');
       await waitFor(host, () => window.__game.phase === 'safety', { label: 'safety' });
@@ -190,6 +197,123 @@ async function run(name) {
       await tap('lobby');
       await waitFor(host, () => window.__game.phase === 'lobby', { label: 'back to lobby' });
       check(true, 'Esc pauses on the TV; "Stop — back to the lobby" from the phone');
+      await tap('title');
+      await waitFor(host, () => window.__game.phase === 'title' && !document.getElementById('title').hidden, { label: 'main menu from the phone' });
+      await tap('mode-couch');
+      await waitFor(host, () => window.__game.phase === 'lobby' && window.__game.mode === 'couch' && document.getElementById('title').hidden, { label: 'couch from the phone' });
+      check(true, 'the phone goes to the main menu and picks Two players');
+    }
+
+    if (name === 'menu-solo') {
+      // The main menu → Solo → the keyboard → the notch, with real clicks and keys.
+      const host = await page(`${base}/?from=menu${shots ? '' : '&noscene'}`, 'host', errors); pages.push(host);
+      await waitFor(host, () => !document.getElementById('title').hidden, { label: 'main menu' });
+      check(await host.evaluate(() => !window.__game), 'the main menu shows first, with no game yet');
+      // Keyboard through the lab's FocusController: ↓ ↓ Enter opens Online duo; Esc comes back.
+      await host.bringToFront();
+      await sleep(400);
+      await host.keyboard.press('ArrowDown'); await sleep(80);
+      await host.keyboard.press('ArrowDown'); await sleep(80);
+      await host.keyboard.press('Enter');
+      await waitFor(host, () => document.getElementById('title-flow').current === 'title-online', { timeout: 5000, label: 'online page by keyboard' });
+      await host.keyboard.press('Escape');
+      await waitFor(host, () => document.getElementById('title-flow').current === 'title-main', { timeout: 5000, label: 'back by Esc' });
+      check(true, 'arrows + Enter open Online duo; Esc goes back (FocusController over uf-flow)');
+      await tapOn(host, '[data-title="solo"]');
+      await waitFor(host, () => window.__game?.phase === 'lobby' && window.__game.seats.A.link, { label: 'solo lobby' });
+      const m = await host.evaluate(() => ({ mode: window.__game.mode, b: window.__game.seats.B.kind, title: document.getElementById('lobby-title').textContent }));
+      check(m.mode === 'solo' && m.b === 'grandma', `Solo: Grandma holds the right handle (${m.title})`);
+      await tapOn(host, '[data-action="keys"][data-arg="A"]');
+      await waitFor(host, () => window.__game.canStart(), { label: 'can start' });
+      await tapOn(host, '#start-btn');
+      await waitFor(host, () => window.__game.phase === 'safety', { label: 'safety' });
+      await tapOn(host, '#safety-ok');
+      await waitFor(host, () => window.__game.phase === 'intro', { label: 'intro' });
+      await tapOn(host, '#intro-skip');
+      await waitFor(host, () => window.__game.phase === 'notch', { timeout: 20000, label: 'notch' });
+      check(true, 'main menu → Solo → keyboard → Start reaches the notch (no lesson for keys)');
+      // Chop on A's turn with D until the notch opens a little.
+      await waitFor(host, () => window.__game.notch.lit === 'A', { timeout: 15000, label: "A's turn" });
+      await sleep(300);
+      await host.keyboard.press('KeyD');
+      await waitFor(host, () => window.__game.view.notchFrac > 0, { timeout: 5000, label: 'a chop lands' });
+      check(true, 'D chops on your turn; Grandma takes hers');
+      // Esc → pause → Main menu (via the pause sheet) → the menu is back, the game reset.
+      await host.keyboard.press('Escape');
+      await waitFor(host, () => window.__game.held, { label: 'paused' });
+      await tapOn(host, '#held-actions [data-arg="title"]');
+      await waitFor(host, () => window.__game.phase === 'title' && !document.getElementById('title').hidden, { label: 'main menu again' });
+      check(true, 'the pause menu goes back to the main menu');
+      await tapOn(host, '[data-title="couch"]');
+      await waitFor(host, () => window.__game.phase === 'lobby' && window.__game.mode === 'couch', { label: 'couch lobby' });
+      check(await host.evaluate(() => window.__game.seats.B.kind === 'open' && window.__game.seats.A.kind === 'keys'), 'picking Two players frees the right handle; the left keeps its keyboard');
+    }
+
+    if (name === 'menu-online') {
+      // Two screens, both through the menus; both play by keyboard.
+      const host = await page(`${base}/?from=menu${shots ? '' : '&noscene'}`, 'host', errors); pages.push(host);
+      await waitFor(host, () => !document.getElementById('title').hidden, { label: 'host menu' });
+      await tapOn(host, '[data-title="online"]');
+      await tapOn(host, '[data-title="online-host"]');
+      await waitFor(host, () => window.__game?.mode === 'online' && window.__game.inviteOpen && window.__game.room?.relay?.open, { label: 'hosting online' });
+      const code = await host.evaluate(() => window.__game.room.code);
+      const shown = await waitFor(host, () => document.querySelector('#lobby-seats uf-join-code')?.getAttribute('value'), { label: 'code shown' });
+      check(shown === code, `the host's lobby shows the code ${code}`);
+      await tapOn(host, '[data-action="keys"][data-arg="A"]');
+
+      const guest = await page(`${base}/?from=menu${shots ? '' : '&noscene'}`, 'guest', errors); pages.push(guest);
+      await waitFor(guest, () => !document.getElementById('title').hidden, { label: 'guest menu' });
+      await tapOn(guest, '[data-title="online"]');
+      await tapOn(guest, '#title-online [data-title="join"]');
+      await sleep(300);
+      await guest.focus('#join-code');
+      await guest.keyboard.type(code, { delay: 40 });
+      await guest.keyboard.press('Enter');
+      await waitFor(guest, () => window.__guest?.clock?.synced, { label: 'guest joined' });
+      await waitFor(host, () => window.__game.guests.size === 1, { label: 'host sees the guest' });
+      const head = await waitFor(guest, () => !document.getElementById('lobby').hidden && document.getElementById('lobby-title').textContent, { label: 'guest lobby' });
+      check(head.includes(code), `the guest's lobby says "${head}"`);
+      await waitFor(guest, () => document.querySelector('[data-action="guest-keys"]'), { label: 'guest keyboard button' });
+      await tapOn(guest, '[data-action="guest-keys"]');
+      await waitFor(host, () => window.__game.seats.B.phone.keys && window.__game.canStart(), { label: 'both handles ready' });
+      check(true, 'the other home takes the right handle by keyboard');
+      // Both screens chop on their turn and pull on their beats, from the keyboard.
+      const drive = (seat) => {
+        const keys = seat === 'A' ? { pull: 'KeyF', chop: 'KeyD' } : { pull: 'KeyJ', chop: 'KeyK' };
+        const fire = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
+        let held = false, lastChop = 0;
+        setInterval(() => {
+          const v = seat === 'A' ? window.__game?.view : window.__guest?.view;
+          const hNow = seat === 'A' ? performance.now() : window.__guest.clock.toHost(performance.now());
+          if (!v) return;
+          if (v.phase === 'notch' && v.litFace === seat && hNow - lastChop > 900) { lastChop = hNow; fire('keydown', keys.chop); fire('keyup', keys.chop); }
+          let want = false;
+          if (v.phase === 'saw' && v.song) {
+            const bp = (hNow - v.song.startH) / (60000 / v.song.bpm);
+            // A pulls through even beats (arriving pulled on odd), B through odd.
+            want = bp >= 0 && (Math.floor(bp) % 2 === 0) === (seat === 'A');
+          }
+          if (want !== held) { held = want; fire(want ? 'keydown' : 'keyup', keys.pull); }
+        }, 8);
+      };
+      await host.evaluate(drive, 'A');
+      await guest.evaluate(drive, 'B');
+      await tapOn(host, '#start-btn');
+      await waitFor(host, () => window.__game.phase === 'safety', { label: 'safety' });
+      await host.evaluate(() => { window.__game.safetyOk(); window.__game.skipIntro(); });
+      await waitFor(host, () => window.__game.phase === 'saw', { timeout: 60000, label: 'notch done by keyboard' });
+      check(true, 'both homes chopped the notch by keyboard');
+      await sleep(15000);
+      const w = await host.evaluate(() => ({ bites: window.__game.saw.bites, tantrums: window.__game.saw.tantrums, binds: window.__game.saw.binds }));
+      check(w.bites >= 4, `online by keyboard, the saw cuts: ${w.bites} bites, ${w.binds} binds, ${w.tantrums} tantrums in 15 s`);
+      const gp = await guest.evaluate(() => window.__guest.view?.phase);
+      check(gp === 'saw' || gp === 'fall', `the guest screen follows (phase ${gp})`);
+      // The host goes back to the menu and picks Solo: the guest is told the online game is over.
+      await host.evaluate(() => { window.__game.pause(); window.__game.menu('title'); });
+      await waitFor(guest, () => window.__guest.view?.phase === 'title' && !document.getElementById('notice').hidden, { label: 'guest sees the host choosing' });
+      await tapOn(host, '[data-title="solo"]');
+      await waitFor(guest, () => window.__guest.notice.ended && document.getElementById('notice-title').textContent.includes('over'), { label: 'guest told it ended' });
+      check(await host.evaluate(() => window.__game.guests.size === 0 && !window.__game.inviteOpen), 'leaving online closes the invite and lets the guest go; the guest is told');
     }
 
     if (name === 'grandma') {
@@ -206,10 +330,9 @@ async function run(name) {
     }
 
     if (name === 'online') {
-      const host = await page(`${base}/?host${shots ? '' : '&noscene'}`, 'host', errors); pages.push(host);
+      const host = await page(`${base}/?host=online${shots ? '' : '&noscene'}`, 'host', errors); pages.push(host);
       await waitFor(host, () => window.__game?.seats.A.link && window.__game?.room?.relay?.open, { label: 'host up' });
       const code = await host.evaluate(() => window.__game.room.code);
-      await host.evaluate(() => window.__game.openInvite(true));
       const guest = await page(`${base}/?join=${code}${shots ? '' : '&noscene'}`, 'guest', errors); pages.push(guest);
       await waitFor(host, () => window.__game.guests.size === 1, { label: 'guest joined' });
       await waitFor(guest, () => window.__guest?.clock?.synced, { label: 'guest clock' });

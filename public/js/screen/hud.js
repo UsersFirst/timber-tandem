@@ -36,6 +36,10 @@ export class Hud {
     this.toastTimer = 0;
     /** A guest screen's own phone link for seat B. */
     this.guestLink = '';
+    /** A guest screen's keyboard on seat B: 'off' | 'on' | 'taken' (a phone took it). */
+    this.guestKeys = 'off';
+    /** A guest screen's room code. */
+    this.guestCode = '';
     /** Goose names by seat, from the view. */
     this.names = { A: 'Sir Winston', B: 'Lady Victoria' };
     this._lastPhase = '';
@@ -139,6 +143,8 @@ export class Hud {
     $('held').hidden = !v.held;
     if (v.held) this.renderHeld(v.menu || []);
     /** @type {any} */ ($('pause-btn')).hidden = this.role !== 'host' || v.held || !(v.phase === 'notch' || v.phase === 'saw');
+    // The other home can always leave, except from the lobby (its own button).
+    /** @type {any} */ ($('leave-btn')).hidden = this.role !== 'guest' || v.phase === 'lobby';
     $('intro-skip').hidden = v.phase !== 'intro' || this.role !== 'host';
     if (!playing && v.phase !== 'fall') return;
 
@@ -425,45 +431,86 @@ export class Hud {
   // ---------------- lobby ----------------
 
   renderLobby(l) {
-    const key = JSON.stringify(l);
+    const key = JSON.stringify(l) + this.guestLink + this.guestKeys;
     if (key === this.lastLobby) return;
     this.lastLobby = key;
     const host = this.role === 'host';
+    const mode = l.mode || 'couch';
+    const head = !host
+      ? [`Joined ${CODE_PREFIX}${this.guestCode}`, 'You take the right handle. The other home starts the game when you’re both ready.']
+      : mode === 'solo' ? ['Saw with Grandma', 'Scan your handle’s code with your phone — held in a firm fist, like a saw handle. Or use the keyboard. Grandma takes the other end.']
+      : mode === 'online' ? ['Online duo — you’re hosting', 'Your phone takes the left handle. The other home joins with the code, and their phone takes the right.']
+      : ['Grandma’s woodpile needs two', 'Each player scans their handle’s code. One phone each — held in a firm fist, like a saw handle.'];
+    $('lobby-title').textContent = head[0];
+    $('lobby-sub').textContent = head[1];
+    const keysLine = (id) => (id === 'A' ? 'Hold <b>F</b> to pull · <b>D</b> chops · <b>Q</b>/<b>W</b> steer' : 'Hold <b>J</b> to pull · <b>K</b> chops · <b>O</b>/<b>P</b> steer');
     const cards = l.seats.map((s) => {
       const color = COLOR[s.id];
-      const remote = s.home !== 'here';
+      const mine = host ? !(mode === 'online' && s.id === 'B') : s.id === 'B';
       let body = '';
-      if (s.kind === 'grandma') body = `<div class="seat-big">👵 Grandma takes this handle</div><div class="muted">She pulls right on the beat and never pushes.</div>`;
-      else if (s.kind === 'keys') body = `<div class="seat-big">⌨️ Keyboard</div><div class="muted">${s.id === 'A' ? 'Hold F to pull · D chops · Q/W steer' : 'Hold J to pull · K chops · O/P steer'}</div>`;
-      else if (s.kind === 'bot') body = `<div class="seat-big">🤖 Practice bot</div>`;
-      else if (s.state === 'ready') body = `<div class="seat-big">📱 Ready${s.sim ? ' (sim)' : ''}</div><div class="muted">${s.motion === 'touch' ? 'Sawing by touch' : 'Motion on'}</div>`;
-      else if (s.state === 'joined') body = `<div class="seat-big">📱 Connected</div><div class="muted">Tap “Pick up the saw” on the phone.</div>`;
-      else if (remote && host) body = `<div class="seat-big">🏡 The other home</div><div class="muted">Their phone scans the code on their screen.</div>`;
-      else if (!host && s.id === 'B' && this.guestLink) body = qr(this.guestLink, 'Your phone: scan to take this handle');
-      else if (host && s.link && !(s.id === 'B' && l.invite)) body = qr(s.link, 'Scan with your phone');
-      else if (host && s.id === 'B' && l.invite) body = `<div class="seat-big">🏡 The other home</div><div class="muted">Waiting for them to join with the code below.</div>`;
-      else body = `<div class="muted">Waiting…</div>`;
-      const opts = host && s.id === 'B' && s.kind !== 'phone' ? `
-        <div class="seat-opts">
-          <uf-button data-action="grandma" data-arg="${s.kind === 'grandma' ? 'off' : 'on'}" label="${s.kind === 'grandma' ? 'A partner instead' : 'Saw with Grandma'}" variant="ghost" size="sm"></uf-button>
-          <uf-button data-action="invite" label="Invite another home" variant="ghost" size="sm"></uf-button>
-        </div>` : '';
-      const keys = host && s.kind === 'open' ? `<uf-button data-action="keys" data-arg="${s.id}" label="Use keyboard" variant="ghost" size="xs"></uf-button>` : '';
-      return `<section class="seat-card" style="--seat:${color}">
-        <header><span class="dot"></span><b>${s.id === 'A' ? 'Left handle' : 'Right handle'}</b><span class="who">${esc(s.name)}</span></header>
-        <div class="seat-body">${body}</div>${opts}${keys}
+      let foot = '';
+      /** @type {'open'|'joined'|'ready'} */
+      let state = s.state === 'ready' ? 'ready' : s.state === 'joined' ? 'joined' : 'open';
+      let status = '';
+      // Online with no other home connected: the code comes first, whatever the seat says.
+      const needCode = host && mode === 'online' && s.id === 'B' && !l.guests.length;
+      if (needCode) {
+        state = 'open';
+        status = 'Waiting for the other home';
+        body = `<div class="join-how"><div class="muted">On their screen they open</div><div class="join-url">${esc(location.host)}</div><div class="muted">and choose <b>Online duo → Join with a code</b>:</div>
+              <uf-join-code mode="display" value="${esc(l.code)}" code-prefix="${CODE_PREFIX}" length="5"></uf-join-code>
+              <div class="muted waiting">Waiting for them…</div></div>`;
+      }
+      else if (s.kind === 'grandma') { status = '👵 Grandma takes this handle'; body = `<div class="muted">She pulls right on the beat and never pushes.${mode === 'solo' && host ? '<br>Twist with her and you steer at half strength.' : ''}</div>`; }
+      else if (s.kind === 'keys') {
+        status = '⌨️ Keyboard';
+        body = `<div class="muted">${keysLine(s.id)}</div>`;
+        if (host) foot = `<uf-button data-action="unkeys" data-arg="${s.id}" label="A phone instead" variant="ghost" size="sm"></uf-button>`;
+      }
+      else if (s.kind === 'bot') status = '🤖 Practice bot';
+      else if (s.state === 'ready' && s.keys) {
+        status = `⌨️ Keyboard${!mine ? ' · the other home' : ''}`;
+        body = `<div class="muted">${keysLine(s.id)}</div>`;
+        if (!host && s.id === 'B' && this.guestKeys === 'on') foot = `<uf-button data-action="guest-unkeys" label="A phone instead" variant="ghost" size="sm"></uf-button>`;
+      }
+      else if (s.state === 'ready') { status = `📱 Ready${s.sim ? ' (sim)' : ''}`; body = `<div class="muted">${!mine ? 'The other home’s phone. ' : ''}${s.motion === 'touch' ? 'Sawing by touch' : 'Motion on'}</div>`; }
+      else if (s.state === 'joined') { status = '📱 Connected'; body = `<div class="muted">${mine ? 'Tap “Pick up the saw” on the phone.' : 'Waiting for them to pick up the saw.'}</div>`; }
+      else if (!host && s.id === 'B' && this.guestKeys === 'on') { state = 'joined'; status = '⌨️ Keyboard'; body = '<div class="muted">Connecting…</div>'; }
+      else if (!host && s.id === 'B' && this.guestLink) {
+        status = 'Your phone, or your keyboard';
+        body = qr(this.guestLink, 'Your phone: scan to take this handle');
+        foot = `<uf-button data-action="guest-keys" label="Use keyboard" sub="J · K · O/P" variant="primary" size="sm"></uf-button>`;
+      }
+      else if (!host && s.id === 'A') { status = '🏡 The host’s handle'; body = '<div class="muted">Their phone scans the code on their screen.</div>'; }
+      else if (host && mode === 'online' && s.id === 'B') { status = '🏡 The other home is here'; body = '<div class="muted">Their phone scans the code on their own screen — or they use their keyboard.</div>'; }
+      else if (host && s.link) {
+        status = 'A phone, or the keyboard';
+        body = qr(s.link, 'Scan with your phone');
+        if (s.kind === 'open') foot = `<uf-button data-action="keys" data-arg="${s.id}" label="Use keyboard" sub="${s.id === 'A' ? 'F · D · Q/W' : 'J · K · O/P'}" variant="primary" size="sm"></uf-button>`;
+      }
+      else status = 'Waiting…';
+      // Couch: the right handle can go to Grandma (that's solo).
+      if (host && mode === 'couch' && s.id === 'B' && s.kind === 'open') {
+        foot += `<uf-button data-action="grandma" data-arg="on" label="Saw with Grandma instead" variant="primary" size="sm"></uf-button>`;
+      }
+      const badge = !mine && (mode === 'online' || !host) ? 'OTHER HOME' : '';
+      // The seat itself is the lab's <uf-seat> (hint is HTML: escaped once for
+      // the attribute, once for the hint); what pairing needs sits under it.
+      return `<section class="handle${state === 'ready' ? ' ready' : ''}" style="--seat:${color}">
+        <uf-seat seat="${s.id === 'A' ? 'Left handle' : 'Right handle'}" who="${esc(s.name)}" hint="${esc(esc(status))}" state="${state}" tone="${s.id === 'A' ? 'team-a' : 'team-b'}" badge="${badge}"></uf-seat>
+        <div class="handle-body">${body}</div>${foot ? `<div class="seat-opts">${foot}</div>` : ''}
       </section>`;
     }).join('');
-    const invite = host && l.invite ? `<div class="invite">
-        <div class="muted">The other home opens <b>${esc(location.host)}</b>, chooses <b>Join a home</b>, and enters:</div>
-        <uf-join-code mode="display" value="${esc(l.code)}" code-prefix="${CODE_PREFIX}" length="5"></uf-join-code>
-        <div class="muted">${l.guests.length ? '✅ The other home is connected.' : 'Waiting for them…'}</div>
-      </div>` : '';
     $('lobby-seats').innerHTML = cards;
-    $('lobby-invite').innerHTML = invite;
+    $('lobby-invite').innerHTML = '';
     const start = /** @type {any} */ ($('start-btn'));
     if (start) { start.disabled = !l.canStart; start.hidden = !host; }
     $('guest-wait').hidden = host;
+    $('guest-wait').textContent = l.canStart ? 'Both handles are ready — the other home starts the game.' : 'Waiting for both handles…';
+    const back = /** @type {any} */ ($('lobby-back'));
+    back.label = host ? 'Main menu' : 'Leave';
+    back.sub = host ? 'Esc' : '';
+    back.setAttribute('data-action', host ? 'title' : 'leave');
   }
 
   // ---------------- calibration ----------------
@@ -502,6 +549,7 @@ export class Hud {
     btn.setAttribute('data-action', last ? 'more' : 'next');
     btn.hidden = this.role !== 'host';
     /** @type {any} */ ($('score-finish')).hidden = this.role !== 'host' || !last;
+    /** @type {any} */ ($('score-title-btn')).hidden = this.role !== 'host';
     $('score').hidden = false;
   }
 
@@ -509,6 +557,7 @@ export class Hud {
     $('end-body').innerHTML = scores.map((s) => `<div class="end-row"><b>${esc(s.tree)}</b> TEMPER ${s.temper} · TANTRUMS ${s.tantrums} · ${Math.round(s.landing.offDeg)}° off the skid</div>`).join('');
     /** @type {any} */ ($('end-again')).hidden = this.role !== 'host';
     /** @type {any} */ ($('end-more')).hidden = this.role !== 'host';
+    /** @type {any} */ ($('end-title-btn')).hidden = this.role !== 'host';
     $('score').hidden = true;
     $('end').hidden = false;
   }
