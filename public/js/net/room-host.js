@@ -38,10 +38,12 @@ export class RoomHost {
     this.relay = null;
     /** Changes on every page load: clients reset their clock sync when it does. */
     this.boot = Math.random().toString(36).slice(2, 10);
+    /** @type {boolean|undefined} the last invite state asked for */
+    this.invite = undefined;
   }
 
   /** Let a second home's screen join (online duo), or stop letting them. @param {boolean} open */
-  setInvite(open) { this.relay?.send({ t: 'invite', open }); }
+  setInvite(open) { this.invite = open; this.relay?.send({ t: 'invite', open }); }
 
   /** Resume this tab's room after a reload, else make a new one. */
   open({ fresh = false } = {}) {
@@ -59,7 +61,11 @@ export class RoomHost {
       code: this.code, role: 'host', key: this.key, base: this.base,
       onState: (s) => {
         this.h.onState?.(s);
-        if (s === 'open') for (const [seat, sec] of this.secrets) this._allow(seat, sec);
+        if (s === 'open') {
+          for (const [seat, sec] of this.secrets) this._allow(seat, sec);
+          // The invite may have been set before the socket opened (or across a reconnect).
+          if (this.invite !== undefined) this.relay?.send({ t: 'invite', open: this.invite });
+        }
         // Only a real refusal (another host owns this code) starts a new room.
         if (s === 'refused') { this.relay?.close(); this.secrets.clear(); this.open({ fresh: true }); }
       },

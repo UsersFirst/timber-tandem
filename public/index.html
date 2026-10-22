@@ -40,24 +40,63 @@
 
   /* ---------- panels ---------- */
   .panel { position: fixed; z-index: 20; background: rgba(27,20,16,.86); backdrop-filter: blur(6px); border: 1px solid rgba(246,234,216,.14); border-radius: 22px; box-shadow: 0 30px 80px -20px rgba(0,0,0,.7); }
-  #title { inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 35%, rgba(60,36,18,.55), rgba(20,13,9,.92)); border: 0; border-radius: 0; }
-  #title .inner { text-align: center; padding: 24px; max-width: 760px; }
-  #title .actions { display: flex; gap: 14px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
-  #title .small { margin-top: 26px; font-size: 14px; opacity: .65; }
-  #title-join .actions { margin-top: 18px; }
+  #title { inset: 0; display: grid; place-items: center; overflow: auto; background: radial-gradient(ellipse at 50% 30%, rgba(74,44,20,.55), rgba(20,13,9,.94) 70%); border: 0; border-radius: 0; z-index: 30; }
+  #title .inner { text-align: center; padding: 28px 16px; width: min(640px, 100%); }
+  #title .actions { display: flex; gap: 14px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
+  #title .small { margin: 22px auto 0; font-size: 14px; opacity: .65; max-width: 34em; }
+  #title .menu-list { display: grid; gap: 12px; margin: 30px auto 0; width: min(460px, 100%); }
+  #title .menu-list uf-button { width: 100%; justify-content: flex-start; text-align: left; }
+  #title .page-title { font-family: var(--serif); font-weight: 400; font-size: clamp(28px, 3.2vw, 42px); margin: 26px 0 6px; color: #f6d28b; }
+  #title .title-page > p { margin: 0 auto; max-width: 32em; font-size: 17px; line-height: 1.4; }
+  /* Below the main page the logo shrinks, so the page itself leads. */
+  #title:not([data-page="main"]) .logo .w1, #title:not([data-page="main"]) .logo .w2 { display: inline; font-size: clamp(26px, 3vw, 38px); }
+  #title:not([data-page="main"]) .logo .w2 { margin-left: .3em; }
+  #title:not([data-page="main"]) .tagline { display: none; }
+  /* uf-step centres its children by shrinking them; the pages want full-width columns. */
+  #title uf-step { align-items: stretch; gap: 0; }
+  #title-join uf-join-code { margin-top: 18px; max-width: 100%; }
+  @media (max-width: 480px) { #title-join uf-join-code { zoom: .78; } #title-join uf-keypad { zoom: .72; max-width: none; } }
+  #title-join uf-keypad { margin: 14px 0 0; width: max-content; max-width: 100%; align-self: center; }
+  .how { text-align: left; margin: 18px auto 0; padding-left: 1.4em; max-width: 34em; font-size: clamp(16px, 1.5vw, 19px); line-height: 1.45; }
+  .how li { margin: 0 0 10px; padding-left: 4px; }
+  .how li::marker { color: #f2b24c; font-weight: 700; }
+  .how b { color: #f6d28b; }
+  .keys-help { margin-top: 10px; font-size: 14px; }
+  /* Above the score and end sheets (uf-sheet is z 60), so the guest can always get out. */
+  #notice { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(620px, calc(100vw - 32px)); padding: 28px 30px; text-align: center; z-index: 65; }
+  #notice p { font-size: 18px; line-height: 1.45; margin: 12px 0 20px; }
+  #notice.over { top: auto; bottom: 24px; transform: translateX(-50%); }
+  html[data-notice] :is(#lobby, #calib, #safety, #held, #hud, #score, #end, #caption, #paused) { display: none !important; }
+  #leave-btn { position: fixed; z-index: 62; left: 14px; top: 64px; }
+  .join-how { display: grid; gap: 8px; justify-items: center; }
+  .join-how .join-url { font-family: var(--serif); font-size: clamp(22px, 2.2vw, 30px); color: #f6d28b; }
+  .join-how .waiting { margin-top: 4px; animation: breathe 2s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: .45; } }
+  .guest-wait { font-weight: 700; color: #f6d28b; }
 
   #lobby { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 26px 28px; }
   #lobby h1 { margin: 0 0 4px; font-family: var(--serif); font-weight: 400; font-size: clamp(26px, 2.6vw, 38px); }
   #lobby-seats { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
-  .seat-card { border-radius: 18px; padding: 16px; background: color-mix(in srgb, var(--seat) 10%, #2a1d14); border: 2px solid color-mix(in srgb, var(--seat) 55%, transparent); display: flex; flex-direction: column; gap: 10px; min-height: 360px; }
-  .seat-card header { display: flex; align-items: center; gap: 10px; font-size: 18px; }
-  .seat-card header .who { margin-left: auto; font-family: var(--serif); font-size: 20px; color: color-mix(in srgb, var(--seat) 60%, white); }
-  .seat-body { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; }
-  .seat-big { font-size: 26px; font-weight: 700; }
+  /* A handle: the lab's <uf-seat> on top, what pairing needs (QR, code, buttons) under it. */
+  .handle { border-radius: 18px; padding: 14px; background: color-mix(in srgb, var(--seat) 10%, #2a1d14); border: 2px solid color-mix(in srgb, var(--seat) 45%, transparent); display: flex; flex-direction: column; gap: 10px; min-height: 320px; }
+  .handle.ready { box-shadow: 0 0 0 1px color-mix(in srgb, var(--seat) 70%, transparent), 0 0 28px -6px color-mix(in srgb, var(--seat) 60%, transparent); }
+  .handle uf-seat { width: 100%; }
+  .handle uf-seat .uf-seat__who { font-family: var(--serif); font-weight: 400; font-size: clamp(22px, 2vw, 28px); }
+  .handle uf-seat .uf-seat__dev { font-size: 16px; color: var(--ink); }
+  .handle-body { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; }
+  .handle-body:empty { display: none; }
   .seat-opts { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
   .invite { margin-top: 16px; padding: 14px; border-radius: 16px; background: rgba(0,0,0,.25); display: grid; gap: 10px; justify-items: center; text-align: center; }
-  .lobby-foot { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 18px; flex-wrap: wrap; }
-  .lobby-foot .tips { font-size: 14px; max-width: 46em; }
+  .lobby-foot { display: grid; grid-template-columns: auto 1fr auto auto; gap: 16px; align-items: center; margin-top: 18px; }
+  .lobby-foot .tips { font-size: 14px; max-width: 46em; text-align: center; }
+  .lobby-foot uf-button[size="lg"] { width: auto; min-width: 200px; }
+  .lobby-foot #lobby-back { min-width: 0; }
+  @media (max-width: 760px) {
+    .lobby-foot { grid-template-columns: 1fr; }
+    .lobby-foot uf-button[size="lg"] { width: 100%; }
+    .lobby-foot #start-btn { order: -1; }
+    .lobby-foot #guest-wait { order: -2; text-align: center; }
+  }
 
   #calib { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(820px, calc(100vw - 32px)); padding: 28px 32px; text-align: center; }
   #calib-step { font-size: 14px; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
@@ -137,36 +176,75 @@
   <canvas id="scene"></canvas>
 
   <!-- Title -->
-  <div id="title" class="panel" hidden>
+  <div id="title" class="panel" data-page="main" hidden>
     <div class="inner">
-      <div id="title-main">
-        <div class="logo"><span class="w1">TIMBER</span><span class="w2" id="logo-word">TANDEM</span></div>
-        <div class="tagline">One saw. Two handles. Keep your temper.</div>
-        <div class="actions">
-          <uf-button data-title="host" label="Play on this screen" sub="Phones are the saws" variant="accent" size="lg"></uf-button>
-          <uf-button data-title="join" label="Join a home" sub="Online duo, with a code" variant="ghost" size="lg"></uf-button>
-        </div>
+      <div class="logo"><span class="w1">TIMBER</span><span class="w2" id="logo-word">TANDEM</span></div>
+      <div class="tagline">One saw. Two handles. Keep your temper.</div>
+
+      <uf-flow id="title-flow" current="title-main">
+      <uf-step id="title-main" class="title-page">
+        <nav class="menu-list" aria-label="Main menu">
+          <uf-button data-title="solo" label="Solo — saw with Grandma" sub="One phone or the keyboard" variant="accent" size="lg"></uf-button>
+          <uf-button data-title="couch" label="Two players — one screen" sub="Two phones, side by side" variant="accent" size="lg"></uf-button>
+          <uf-button data-title="online" data-flow-go="title-online" label="Online duo" sub="Two homes, one saw" variant="accent" size="lg"></uf-button>
+          <uf-button data-title="how" data-flow-go="title-how" label="How to play" sub="Pull, let go, never push" variant="primary" size="lg"></uf-button>
+        </nav>
         <div class="small">Victorian geese, Grandma’s woodpile, and Old Misery, a crosscut saw with a famously short temper.</div>
-      </div>
-      <div id="title-join" hidden>
-        <div class="logo"><span class="w1" style="font-size:48px">Join a home</span></div>
+      </uf-step>
+
+      <uf-step id="title-online" class="title-page">
+        <h2 class="page-title">Online duo</h2>
+        <p class="muted">One saw between two homes. Each home has its own screen and one player; the host’s screen runs the saw.</p>
+        <nav class="menu-list" aria-label="Online duo">
+          <uf-button data-title="online-host" label="Host an online game" sub="You get a code to send them" variant="accent" size="lg"></uf-button>
+          <uf-button data-title="join" data-flow-go="title-join" label="Join with a code" sub="The other home is hosting" variant="accent" size="lg"></uf-button>
+          <uf-button data-title="back" data-flow-back label="Back" sub="Esc" variant="primary" size="lg" align="start"></uf-button>
+        </nav>
+        <div class="small">Talk over your own call — a phone call, FaceTime or Discord. The song keeps you both on the beat.</div>
+      </uf-step>
+
+      <uf-step id="title-join" class="title-page">
+        <h2 class="page-title">Join with a code</h2>
         <p class="muted">Enter the code on the other home’s screen.</p>
         <uf-join-code id="join-code" mode="entry" code-prefix="TIMB-" length="5"></uf-join-code>
         <uf-keypad id="join-keypad" for="join-code"></uf-keypad>
-        <div class="actions"><uf-button data-title="join-back" label="Back" variant="ghost"></uf-button></div>
-      </div>
+        <nav class="menu-list"><uf-button data-title="back" data-flow-back label="Back" sub="Esc" variant="primary" size="lg" align="start"></uf-button></nav>
+      </uf-step>
+
+      <uf-step id="title-how" class="title-page">
+        <h2 class="page-title">How to saw with Old Misery</h2>
+        <ol class="how">
+          <li><b>Pull to you, then let go.</b> Your partner pulls on the next beat. One stroke per beat — the song keeps time.</li>
+          <li><b>Never push.</b> Shove the saw and the blade bows. Past the red line, Old Misery throws a tantrum and you lose the stroke.</li>
+          <li><b>Chop when your face glows.</b> The notch comes first: small hatchet chops, below your shoulders, taking turns.</li>
+          <li><b>Twist to steer.</b> Roll your fist like turning a key to aim the fall at the skid — not Grandma’s privy.</li>
+          <li><b>Small strokes are plenty.</b> Sawing faster never cuts faster.</li>
+        </ol>
+        <div class="keys-help muted">Keyboard: left handle <b>F</b> pull · <b>D</b> chop · <b>Q</b>/<b>W</b> steer — right handle <b>J</b> · <b>K</b> · <b>O</b>/<b>P</b></div>
+        <nav class="menu-list"><uf-button data-title="back" data-flow-back label="Back" sub="Esc" variant="primary" size="lg" align="start"></uf-button></nav>
+      </uf-step>
+      </uf-flow>
     </div>
   </div>
 
+  <!-- The other home's messages (guest screens) -->
+  <div id="notice" class="panel" hidden>
+    <div class="logo"><span class="w1" id="notice-title" style="font-size:clamp(30px,4vw,48px)"></span></div>
+    <p id="notice-text" class="muted"></p>
+    <uf-button data-action="leave" label="Main menu" variant="accent" size="lg"></uf-button>
+  </div>
+  <uf-button id="leave-btn" data-action="leave" label="Leave" variant="ghost" size="sm" hidden></uf-button>
+
   <!-- Lobby -->
   <div id="lobby" class="panel" hidden>
-    <h1>Grandma’s woodpile needs two</h1>
-    <div class="muted">Each player scans their handle’s code. One phone each — held in a firm fist, like a saw handle.</div>
-    <div id="guest-wait" class="muted" hidden>You’re joining the other home. Your phone takes the right handle.</div>
+    <h1 id="lobby-title">Grandma’s woodpile needs two</h1>
+    <div id="lobby-sub" class="muted">Each player scans their handle’s code. One phone each — held in a firm fist, like a saw handle.</div>
     <div id="lobby-seats"></div>
     <div id="lobby-invite"></div>
     <div class="lobby-foot">
+      <uf-button id="lobby-back" data-action="title" label="Main menu" sub="Esc" variant="ghost" size="lg"></uf-button>
       <div class="tips muted">Use the TV or laptop speakers — Bluetooth is too slow for the beat.</div>
+      <div id="guest-wait" class="guest-wait" hidden>Waiting for both handles…</div>
       <uf-button id="start-btn" data-action="start" label="Start" sub="Enter" variant="accent" size="lg" disabled></uf-button>
     </div>
   </div>
@@ -230,11 +308,11 @@
   <uf-sheet id="score" heading="" placement="center" size="lg" tone="gold" headline dismissible="false" hidden open>
     <div id="score-title" style="font-family:var(--serif);font-size:34px;text-align:center"></div>
     <div id="score-body"></div>
-    <div slot="actions"><uf-button id="score-finish" data-action="finish" label="Finish" variant="ghost" size="lg" hidden></uf-button><uf-button id="score-next" data-action="next" label="Next tree" variant="accent" size="lg"></uf-button></div>
+    <div slot="actions"><uf-button id="score-title-btn" data-action="title" label="Main menu" variant="ghost" size="lg"></uf-button><uf-button id="score-finish" data-action="finish" label="Finish" variant="ghost" size="lg" hidden></uf-button><uf-button id="score-next" data-action="next" label="Next tree" variant="accent" size="lg"></uf-button></div>
   </uf-sheet>
   <uf-sheet id="end" heading="The woodpile’s started" placement="center" size="md" tone="gold" dismissible="false" hidden open>
     <div id="end-body"></div>
-    <div slot="actions"><uf-button id="end-again" data-action="again" label="Back to the lobby" variant="ghost" size="lg"></uf-button><uf-button id="end-more" data-action="more" label="One more tree" variant="accent" size="lg"></uf-button></div>
+    <div slot="actions"><uf-button id="end-title-btn" data-action="title" label="Main menu" variant="ghost" size="lg"></uf-button><uf-button id="end-again" data-action="again" label="Back to the lobby" variant="ghost" size="lg"></uf-button><uf-button id="end-more" data-action="more" label="One more tree" variant="accent" size="lg"></uf-button></div>
   </uf-sheet>
 
   <script>if (new URLSearchParams(location.search).has('spike')) document.documentElement.dataset.spike = '1';</script>

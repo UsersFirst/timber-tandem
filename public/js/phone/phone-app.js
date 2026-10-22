@@ -307,7 +307,9 @@ function setMode(mode, info) {
     chop: ['Chop on your turn', 'Your side glows on the TV.'],
     idle: ['Look at the TV', ''],
   }[mode] || ['Look at the TV', ''];
-  if (app.input !== 'touch') setScreen(text[0], text[1]);
+  // The TV is on its main menu: the phone can pick the game too.
+  const shown = mode === 'lobby' && info?.menu === 'title' ? ['Pick a game', 'On the TV, or right here.'] : text;
+  if (app.input !== 'touch') setScreen(shown[0], shown[1]);
   ui.root.dataset.mode = mode;
   renderMenu(app.menu);
 }

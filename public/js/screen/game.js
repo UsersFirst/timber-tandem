@@ -15,6 +15,7 @@ import { createNotch, notchHit, notchFrac } from '../core/notch.js';
 import { TREES, createCut, cutBite, fallAngle, cutFrac, landing, bladeLean } from '../core/tree.js';
 import { lagToBeat, songTempo, pullParity } from '../core/calibration.js';
 import { SEATS } from '../core/protocol.js';
+import { menuFor, isMode, seatBChangesHome, remoteMenu, hostOnly } from '../core/modes.js';
 import { LinePicker, LINES } from './lines.js';
 import { SpikeStore } from './spike-store.js';
 
@@ -48,7 +49,7 @@ const GOOSE_NAMES = { winston: 'Sir Winston', victoria: 'Lady Victoria', grandma
  * @property {SeatKind} kind
  * @property {'winston'|'victoria'|'grandma'} goose
  * @property {SeatBuffer} buffer
- * @property {{joined:boolean, motion:string, calibrated:boolean, rateHz:number, sim:string|null, ua:string, flipped:boolean}} phone
+ * @property {{joined:boolean, motion:string, calibrated:boolean, rateHz:number, sim:string|null, ua:string, flipped:boolean, keys:boolean}} phone
  * @property {'here'|string} home    'here' or 'guest:<id>'
  * @property {HoldPull} hold
  * @property {{pull:boolean, left:boolean, right:boolean}} keys
@@ -72,6 +73,8 @@ export class Game {
     this.seats = { A: this._slot('A', 1, 'winston'), B: this._slot('B', 2, 'victoria') };
     this.phase = 'lobby';
     this.phaseAt = performance.now();
+    /** How this screen is playing (core/modes.js). @type {import('../core/modes.js').Mode} */
+    this.mode = 'couch';
     /** @type {{bpm:number, startH:number}|null} */
     this.song = null;
     this.treeIdx = 0;
@@ -109,7 +112,7 @@ export class Game {
   _slot(id, num, goose) {
     return {
       id, num, kind: 'open', goose, buffer: new SeatBuffer(),
-      phone: { joined: false, motion: 'pending', calibrated: false, rateHz: 0, sim: null, ua: '', flipped: false },
+      phone: { joined: false, motion: 'pending', calibrated: false, rateHz: 0, sim: null, ua: '', flipped: false, keys: false },
       home: 'here', hold: new HoldPull(), keys: { pull: false, left: false, right: false }, botLag: 0, link: '',
       calib: {}, tempo: null, lastRoll: 0,
     };
@@ -125,7 +128,7 @@ export class Game {
     }
     const keys = this.params.get('keys');
     if (keys) for (const id of keys.split(',')) { const s = this.seats[/** @type {SeatId} */ (id)]; if (s) s.kind = 'keys'; }
-    if (this.params.has('grandma')) this.useGrandma(true);
+    if (this.params.has('grandma')) { this.mode = 'solo'; this.useGrandma(true); }
   }
 
   // ---------------- emit ----------------
@@ -167,6 +170,56 @@ export class Game {
 
   _castChanged() {
     this.emit({ k: 'cast', cast: { A: this.seats.A.goose, B: this.seats.B.goose } });
+  }
+
+  /**
+   * Choose how to play (from the main menu, the lobby, or a phone). Only
+   * before a game starts. Seat A stays as it is; seat B follows the mode.
+   * @param {import('../core/modes.js').Mode} mode
+   */
+  setMode(mode) {
+    if (!isMode(mode) || (this.phase !== 'lobby' && this.phase !== 'title')) return false;
+    const from = this.mode;
+    this.mode = mode;
+    const B = this.seats.B;
+    if (mode !== 'online') {
+      if (this.inviteOpen) this.openInvite(false);
+      this._endOnline();
+      B.home = 'here';
+    }
+    // A link (and any phone on it) for one home must not carry over to the
+    // other: a fresh seat-B link drops it (the relay closes the old socket).
+    if (seatBChangesHome(from, mode)) {
+      if (B.kind === 'phone') B.kind = 'open';
+      B.phone.joined = false;
+      B.phone.motion = 'pending';
+      B.phone.calibrated = false;
+      B.phone.keys = false;
+      if (this.room) this.room.phoneLink(B.num, { newLink: true }).then(() => this.refreshLinks());
+    }
+    if (mode === 'solo') this.useGrandma(true);
+    else if (B.kind === 'grandma' || B.goose === 'grandma' || (mode === 'online' && B.kind === 'keys')) { B.kind = 'open'; this.useGrandma(false); }
+    if (mode === 'online') this.openInvite(true);
+    if (this.phase === 'title') this._setPhase('lobby');
+    this._menuKey = '';
+    this.emit({ k: 'mode', mode });
+    return true;
+  }
+
+  /** Is this seat played from the other home? @param {SeatSlot} s */
+  _remote(s) { return this.mode === 'online' && s.id === 'B'; }
+
+  /** Leave online play: tell the other home's screen, and forget it. */
+  _endOnline() {
+    if (!this.guests.size) return;
+    this.room?.toScreens({ t: 'online-ended' });
+    for (const id of [...this.guests]) this.onScreenLeft(id);
+  }
+
+  /** Back to the main menu (from the lobby, the pause menu or the results). */
+  toTitle() {
+    this.toLobby();
+    this._setPhase('title');
   }
 
   /** Open seat B to a second home (online duo). */
@@ -236,7 +289,12 @@ export class Game {
     const s = this.seatByNum(num);
     if (!s) return;
     s.phone.joined = true;
-    if (s.kind === 'open' || (s.kind === 'grandma' && this.phase === 'lobby')) {
+    // A new device on this seat (or the same one back) says what it is in its
+    // hello: until then it isn't ready, even if a keyboard held the seat before.
+    s.phone.motion = 'pending';
+    s.phone.keys = false;
+    // Solo keeps Grandma on the right handle whatever scans.
+    if (s.kind === 'open' || (s.kind === 'grandma' && this.phase === 'lobby' && this.mode !== 'solo')) {
       s.kind = 'phone';
       if (s.id === 'B') s.goose = 'victoria';
       this._castChanged();
@@ -253,7 +311,7 @@ export class Game {
     const s = this.seatByNum(num);
     if (!s) return;
     s.phone.joined = false;
-    if (this.phase === 'lobby' && s.kind === 'phone') { s.kind = 'open'; s.phone.motion = 'pending'; }
+    if ((this.phase === 'lobby' || this.phase === 'title') && s.kind === 'phone') { s.kind = 'open'; s.phone.motion = 'pending'; s.phone.keys = false; }
   }
 
   /** @param {number} num @param {any} m */
@@ -270,6 +328,7 @@ export class Game {
         s.phone.rateHz = m.rateHz || 0;
         s.phone.sim = m.sim || null;
         s.phone.ua = m.ua || '';
+        s.phone.keys = !!m.keys;
         if (s.kind === 'open') s.kind = 'phone';
         this._sendMode(s);
         this._menuKey = '';
@@ -305,12 +364,13 @@ export class Game {
 
   /** @param {string} id */
   onScreenJoined(id) {
-    // One other home per game: a second, different screen is turned away.
+    // One other home per game, and only in online mode: anyone else is turned away.
+    if (this.mode !== 'online' && !this.inviteOpen) { this.room?.toScreens({ t: 'online-ended' }, id); return; }
     const other = [...this.guests].find((g) => g !== id);
     if (other) { this.room?.kickScreen(id); return; }
     this.guests.add(id);
     // A reconnect mid-game just gets the picture back; the seats only change in the lobby.
-    if (this.phase === 'lobby') {
+    if (this.phase === 'lobby' || this.phase === 'title') {
       if (this.seats.B.kind === 'grandma') this.useGrandma(false);
       this.seats.B.home = 'guest:' + id;
     }
@@ -593,6 +653,8 @@ export class Game {
     this.held = false;
     this.emit({ k: 'held', on: false });
     this.emit({ k: 'song-stop' });
+    // A phone that went away mid-game frees its seat in the lobby.
+    for (const s of Object.values(this.seats)) if (s.kind === 'phone' && !s.phone.joined) { s.kind = 'open'; s.phone.motion = 'pending'; s.phone.keys = false; }
     this._setPhase('lobby');
     this.emit({ k: 'camera', mode: 'intro' });
   }
@@ -640,31 +702,12 @@ export class Game {
    * @returns {{id:string, label:string, primary?:boolean, local?:boolean}[]}
    */
   menuItems() {
-    const last = this.treeIdx >= TREES.length - 1;
-    const onePhone = this.seats.A.kind === 'phone' && this.seats.B.kind !== 'phone';
-    switch (this.phase) {
-      case 'lobby': {
-        /** @type {{id:string, label:string, primary?:boolean}[]} */
-        const items = [];
-        if (this.canStart()) items.push({ id: 'start', label: 'Start', primary: true });
-        if (onePhone && this.seats.B.kind === 'open') items.push({ id: 'solo', label: 'Saw with Grandma' });
-        if (this.seats.B.kind === 'grandma') items.push({ id: 'duo', label: 'A partner instead' });
-        return items;
-      }
-      case 'safety': return [{ id: 'safety-ok', label: 'Got it', primary: true }];
-      case 'intro': return [{ id: 'skip-intro', label: 'Skip' }];
-      case 'calibrate': return [{ id: 'flip', label: 'My hand goes the wrong way', local: true }, { id: 'skip-calib', label: 'Skip the lesson' }];
-      case 'notch': case 'saw':
-        return this.held
-          ? [{ id: 'resume', label: 'Resume', primary: true }, { id: 'flip', label: 'My hand goes the wrong way', local: true }, { id: 'restart', label: 'Start this tree again' }, { id: 'lobby', label: 'Stop — back to the lobby' }]
-          : [{ id: 'pause', label: 'Pause' }];
-      case 'score':
-        return last
-          ? [{ id: 'more', label: 'One more tree', primary: true }, { id: 'finish', label: 'Finish' }, { id: 'lobby', label: 'Back to the lobby' }]
-          : [{ id: 'next', label: 'Next tree', primary: true }, { id: 'lobby', label: 'Back to the lobby' }];
-      case 'end': return [{ id: 'more', label: 'One more tree', primary: true }, { id: 'lobby', label: 'Back to the lobby' }];
-      default: return [];
-    }
+    return menuFor({
+      phase: this.phase, held: this.held, mode: this.mode, lastTree: this.treeIdx >= TREES.length - 1,
+      canStart: this.canStart(),
+      onePhone: this.seats.A.kind === 'phone' && this.seats.B.kind !== 'phone',
+      bOpen: this.seats.B.kind === 'open',
+    });
   }
 
   /**
@@ -674,10 +717,14 @@ export class Game {
    */
   menu(id, from) {
     if (!this.menuItems().some((i) => i.id === id)) return;
+    // A phone only speaks for a seat it holds, and the other home's can't navigate this screen.
+    if (from && (from.kind !== 'phone' || (this._remote(from) && hostOnly(id)))) return;
     switch (id) {
       case 'start': this.start(); break;
-      case 'solo': this.useGrandma(true); break;
-      case 'duo': this.useGrandma(false); break;
+      case 'solo': case 'mode-solo': this.setMode('solo'); break;
+      case 'duo': case 'mode-couch': this.setMode('couch'); break;
+      case 'mode-online': this.setMode('online'); break;
+      case 'title': this.toTitle(); break;
       case 'safety-ok': this.safetyOk(); break;
       case 'skip-intro': this.skipIntro(); break;
       case 'skip-calib': this.skipCalibration(); break;
@@ -695,10 +742,11 @@ export class Game {
   /** Phones get the menu whenever it changes. */
   _syncMenu() {
     const items = this.menuItems();
-    const key = this.phase + JSON.stringify(items);
+    const key = this.phase + this.mode + JSON.stringify(items);
     if (key === this._menuKey) return;
     this._menuKey = key;
-    this.room?.toPad(null, { t: 'menu', items });
+    // The other home's phone gets the tree's buttons, not the host's navigation.
+    for (const s of Object.values(this.seats)) this.room?.toPad(s.num, { t: 'menu', items: this._remote(s) ? remoteMenu(items) : items });
   }
 
   /**
@@ -735,7 +783,7 @@ export class Game {
   _sendMode(s, extra = {}) {
     if (!this.room || s.kind !== 'phone') return;
     let mode = 'idle';
-    if (this.phase === 'lobby') mode = 'lobby';
+    if (this.phase === 'lobby' || this.phase === 'title') mode = 'lobby';
     else if (this.phase === 'calibrate') {
       const step = CALIB_STEPS[this.calib.idx];
       const mine = s.calib[step] !== undefined && s.phone.motion === 'ok';
@@ -745,6 +793,7 @@ export class Game {
     else if (this.phase === 'saw') mode = 'saw';
     else if (this.phase === 'safety') mode = 'safety';
     else if (this.phase === 'score' || this.phase === 'end') mode = 'between';
+    if (this.phase === 'title') extra = { menu: 'title', ...extra };
     this.room.toPad(s.num, { t: 'mode', mode, song: this.song, ...extra });
   }
 
@@ -828,7 +877,7 @@ export class Game {
       // Outside the back cut the blade just follows the hands: no cutting,
       // and no strain shown (it only means something while sawing).
       if (this.phase !== 'saw') {
-        this.saw.s = this.phase === 'lobby' || this.phase === 'calibrate' ? (h.A.p - h.B.p) / 2 : this.saw.s * 0.9;
+        this.saw.s = this.phase === 'lobby' || this.phase === 'title' || this.phase === 'calibrate' ? (h.A.p - h.B.p) / 2 : this.saw.s * 0.9;
         this.saw.e = 0;
       }
     }
@@ -849,6 +898,7 @@ export class Game {
     const zone = zoneOf(this.saw.e);
     const view = {
       phase: this.phase,
+      mode: this.mode,
       paused: this.paused,
       s: this.saw.s,
       e: this.saw.e,
@@ -954,8 +1004,9 @@ export class Game {
     return {
       seats: Object.values(this.seats).map((s) => ({
         id: s.id, kind: s.kind, goose: s.goose, name: GOOSE_NAMES[s.goose], state: this.seatState(s), link: s.link,
-        home: s.home, motion: s.phone.motion, sim: s.phone.sim,
+        home: s.home, motion: s.phone.motion, sim: s.phone.sim, keys: s.phone.keys,
       })),
+      mode: this.mode,
       code: this.room?.code || '',
       guests: [...this.guests],
       invite: this.inviteOpen,
