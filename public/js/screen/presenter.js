@@ -85,7 +85,17 @@ export class Presenter {
         break;
       }
       case 'bite': sc?.bite(); a.play('bite', { gain: 0.9 }); break;
-      case 'tantrum': sc?.tantrum(ev.blame); a.play('tantrum', { pan: pan(ev.blame) }); break;
+      case 'tantrum':
+        sc?.tantrum(ev.blame, ev.kind);
+        a.play('tantrum', { pan: pan(ev.blame) });
+        // The blamed goose squawks a beat after the snap.
+        setTimeout(() => a.play('honk', { pan: pan(ev.blame), gain: 0.7 }), 90);
+        // Grandma, as the partner, tuts.
+        {
+          const g = this.cast.A === 'grandma' ? 'A' : this.cast.B === 'grandma' ? 'B' : null;
+          if (g && ev.blame !== g) setTimeout(() => a.play('tut', { pan: pan(g), gain: 0.8 }), 520);
+        }
+        break;
       case 'chatter': sc?.chatter(); a.play('chatter'); break;
       case 'hit':
         sc?.hit(ev.seat, ev.kind);

@@ -22,6 +22,7 @@ import { FellingTree, CUT_Y } from './scene/tree.js';
 import { Saw, makeHatchet, BLADE_L, TRAVEL } from './scene/saw.js';
 import { loadGoose } from './scene/geese.js';
 import { Fx } from './scene/fx.js';
+import { TantrumFx, geeseTantrum } from './scene/tantrum.js';
 
 /**
  * @typedef {object} SceneView
@@ -73,6 +74,7 @@ export async function createScene(canvas, opts = {}) {
   const saw = new Saw();
   scene.add(saw.group);
   const fx = new Fx(scene);
+  const tfx = new TantrumFx(scene);
 
   // Seat rings on the ground (who is who; brighten on your notch turn).
   /** @type {Record<'A'|'B', THREE.Mesh>} */
@@ -146,8 +148,14 @@ export async function createScene(canvas, opts = {}) {
   /** @type {null | {resolve: () => void, settledAt: number|null}} */
   let fallJob = null;
   let celebrating = false;
-  /** Seconds left of a goose's tantrum reaction. */
-  const react = { A: 0, B: 0 };
+  /** A wing that let go of the handle in a tantrum: seconds in, and for how long. */
+  const flail = { A: { t: 0, dur: 0 }, B: { t: 0, dur: 0 } };
+  /** Timed tantrum beats, in scene seconds. @type {{t:number, fn:() => void}[]} */
+  let cues = [];
+  /** The camera's tantrum kick (a punch-in), decays. */
+  let camKick = 0;
+  /** Scene time of the last tantrum (repeats get a smaller take). */
+  let lastTantrum = -1e9;
   /** @type {SceneView} */
   let lastView = { phase: 'idle', s: 0, e: 0, zone: 'green', blame: null, lean: 0, cutFrac: 0, notchFrac: 0, litFace: null };
 
@@ -240,6 +248,10 @@ export async function createScene(canvas, opts = {}) {
     phase = view.phase;
     const dt = dtReal * timeScale;
     time += dt;
+    if (cues.length) {
+      const due = cues.filter((c) => c.t <= time);
+      if (due.length) { cues = cues.filter((c) => c.t > time); for (const c of due) c.fn(); }
+    }
 
     // Tree visuals.
     tree.setNotch(view.notchFrac);
@@ -265,7 +277,7 @@ export async function createScene(canvas, opts = {}) {
     }
 
     // Saw.
-    saw.group.position.y = CUT_Y;
+    saw.group.position.y = CUT_Y + (saw.lift || 0);
     saw.group.position.z = THREE.MathUtils.damp(saw.group.position.z, sawZ(view), 6, dtReal);
     saw.update(dt, view);
     saw.group.visible = true;
@@ -295,8 +307,13 @@ export async function createScene(canvas, opts = {}) {
       if (!g) continue;
       g.root.position.copy(b.pos);
       g.root.rotation.y = b.yaw;
-      if (react[seat] > 0) { react[seat] -= dtReal; g.play('flap_startle', { fade: 0.1 }); }
-      else if (celebrating) g.play('celebrate');
+      // Tantrum offsets (hop, shove along the goose's forward).
+      if (g.offset) {
+        g.root.position.y += g.offset.up;
+        g.root.position.x += Math.sin(b.yaw) * g.offset.fwd;
+        g.root.position.z += Math.cos(b.yaw) * g.offset.fwd;
+      }
+      if (celebrating) g.play('celebrate');
       else if (walking) g.play('walk', { fade: 0.2 });
       else g.play('idle_shift', { fade: 0.35 });
 
@@ -316,6 +333,19 @@ export async function createScene(canvas, opts = {}) {
         const far = camSide === 'right' ? 'left' : 'right';
         hands[camSide] = grip.top.clone().add(new THREE.Vector3(0, 0, 0.03));
         hands[far] = grip.low.clone().add(new THREE.Vector3(0, 0, -0.03));
+        // Tantrum: the camera-side wing lets go and flaps, then grabs back on.
+        const fl = flail[seat];
+        if (fl.t < fl.dur) {
+          fl.t += dt;
+          const sh = g.bones[camSide === 'right' ? 'RightArm' : 'LeftArm'].getWorldPosition(new THREE.Vector3());
+          // One arc: thrown up and out (back, away from the partner), a fast
+          // flutter at the top, then down onto the handle again.
+          const away = seat === 'A' ? -1 : 1; // away from the partner (x)
+          const flutter = Math.sin(fl.t * 34) * Math.max(0, 1 - fl.t / fl.dur);
+          const wing = sh.add(new THREE.Vector3(away * (0.33 + 0.03 * flutter), 0.1 + 0.07 * flutter, 0.16));
+          const w = Math.min(1, fl.t / 0.07) * Math.min(1, (fl.dur - fl.t) / 0.25);
+          hands[camSide] = /** @type {THREE.Vector3} */ (hands[camSide]).clone().lerp(wing, THREE.MathUtils.clamp(w, 0, 1));
+        }
         g.ikWeight = THREE.MathUtils.damp(g.ikWeight, 1, 10, dtReal);
       } else if (view.phase === 'notch' && !walking) {
         const hand = chopPose(seat, dt);
@@ -329,6 +359,7 @@ export async function createScene(canvas, opts = {}) {
     }
 
     fx.update(dt);
+    tfx.update(dt);
     env.update(dt);
 
     // Camera follow: orbit around the look-at point (azimuth, elevation and
@@ -346,10 +377,13 @@ export async function createScene(canvas, opts = {}) {
     cam.pos.copy(cam.at).add(_off1.setFromSpherical(cur));
     cam.fov += (camGoal.fov - cam.fov) * k;
     shake = Math.max(0, shake - dtReal * 1.8);
+    camKick = Math.max(0, camKick - dtReal * 2.2);
     camera.position.copy(cam.pos);
     if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * 0.25 * shake, (Math.random() - 0.5) * 0.25 * shake, 0));
     camera.lookAt(cam.at);
-    if (Math.abs(camera.fov - cam.fov) > 0.01) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+    // The punch-in: a quick narrowing of the lens that eases back out.
+    const fovNow = cam.fov - 5 * camKick * camKick;
+    if (Math.abs(camera.fov - fovNow) > 0.01) { camera.fov = fovNow; camera.updateProjectionMatrix(); }
     renderer.render(scene, camera);
   }
 
@@ -361,6 +395,9 @@ export async function createScene(canvas, opts = {}) {
     if (d < -Math.PI) d += Math.PI * 2;
     return a + d * (1 - Math.exp(-lambda * dt));
   }
+
+  /** Run fn this many scene seconds from now. @param {number} at @param {() => void} fn */
+  function later(at, fn) { cues.push({ t: time + at, fn }); }
 
   /** Kerf ends (world) for sawdust. */
   function kerfEnds() {
@@ -405,12 +442,36 @@ export async function createScene(canvas, opts = {}) {
       fx.burst(ends[0], new THREE.Vector3(-1, -0.2, 0.3), { n: 7, speed: 1.3, size: 0.018, color: 0xf0d3a0, spread: 0.6, life: 1.0 });
       fx.burst(ends[1], new THREE.Vector3(1, -0.2, 0.3), { n: 7, speed: 1.3, size: 0.018, color: 0xf0d3a0, spread: 0.6, life: 1.0 });
     },
-    tantrum(blame) {
-      saw.tantrum(blame);
-      const at = blame ? saw.gripPoints(blame).low : kerfEnds()[0];
-      fx.puff(at, { n: 6, spread: 0.3, rise: 0.5, life: 0.9 });
-      fx.burst(kerfEnds()[blame === 'B' ? 1 : 0], new THREE.Vector3(blame === 'B' ? 1 : -1, 0.5, 0.6), { n: 10, speed: 2.4, size: 0.02, color: 0xf0d3a0 });
-      if (blame) react[blame] = 0.9;
+    tantrum(blame, kind = 'push') {
+      const small = time - lastTantrum < 2.5;
+      lastTantrum = time;
+      saw.tantrum(blame, kind, small);
+      // Sawdust spits out of both ends of the kerf, harder on the blamed side.
+      const ends = kerfEnds();
+      for (const [i, sg] of /** @type {const} */ ([[0, -1], [1, 1]])) {
+        const mine = blame === null || (blame === 'A') === (i === 0);
+        fx.burst(ends[i], new THREE.Vector3(sg, 0.7, 0.8), { n: mine ? 18 : 8, speed: mine ? 3.2 : 2, size: 0.022, color: 0xf0d3a0, spread: 0.9, life: 1.1 });
+      }
+      fx.burst(new THREE.Vector3(0, CUT_Y + 0.02, tree.radius + 0.05), new THREE.Vector3(0, 1, 1), { n: 10, speed: 2.6, size: 0.012, color: 0xffd36b, spread: 1.2, life: 0.45 });
+      // Old Misery lets off steam where the blade leaves the trunk, like a kettle on the boil.
+      for (const [i, sg] of /** @type {const} */ ([[0, -1], [1, 1]])) {
+        const mine = blame === null || (blame === 'A') === (i === 0);
+        tfx.jet(ends[i].clone().add(new THREE.Vector3(sg * 0.08, 0.05, 0.1)), new THREE.Vector3(sg * 0.35, 1, 0.35), { n: mine ? 6 : 4, speed: 1.7, size: 0.3 });
+      }
+      const dir = blame === 'A' ? -1 : blame === 'B' ? 1 : 0;
+      later(0.04, () => tfx.curse(new THREE.Vector3(saw.group.position.x + dir * 0.3, CUT_Y + 0.72, tree.radius + 0.25), dir, small));
+      // The blamed goose steams at the head once it has shaken it off.
+      if (!small) later(0.85, () => {
+        for (const seat of blame ? [blame] : /** @type {const} */ (['A', 'B'])) {
+          const g = geese[seat];
+          if (g?.bones.Head) tfx.jet(g.bones.Head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.12, 0)), new THREE.Vector3(0, 1, 0), { n: 4, speed: 0.9, size: 0.22, life: 0.8 });
+        }
+      });
+      geeseTantrum({
+        geese, cast: castIds, later,
+        flail(seat, sec) { flail[seat] = { t: 0, dur: sec }; },
+        kickCamera(a) { camKick = Math.max(camKick, a); shake = Math.max(shake, 0.45 * a); },
+      }, blame, kind, small);
     },
     chatter() { saw.chatter(); },
     fall(angleDeg) {
@@ -431,7 +492,7 @@ export async function createScene(canvas, opts = {}) {
     },
     get info() { return { drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }; },
     /** Internals for dev tools and smokes (not part of the game API). */
-    get _debug() { return { scene, camera, renderer, geese, saw, tree, fx }; },
+    get _debug() { return { scene, camera, renderer, geese, saw, tree, fx, tfx }; },
     dispose() {
       renderer.dispose();
       scene.traverse((o) => { const m = /** @type {any} */ (o); if (m.geometry) m.geometry.dispose(); });
@@ -450,7 +511,7 @@ export async function createScene(canvas, opts = {}) {
  * @property {(dtMs: number, view: SceneView) => void} update
  * @property {(seat: 'A'|'B', kind: 'tok'|'chip'|'clang') => void} hit
  * @property {() => void} bite
- * @property {(blame: 'A'|'B'|null) => void} tantrum
+ * @property {(blame: 'A'|'B'|null, kind?: 'push'|'tug') => void} tantrum
  * @property {() => void} chatter
  * @property {(angleDeg: number) => Promise<void>} fall
  * @property {() => void} celebrate

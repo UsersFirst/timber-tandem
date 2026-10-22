@@ -66,7 +66,8 @@ export class Hud {
       case 'tantrum':
         this.flash.tantrum = 1;
         if (ev.blame) this.flash[ev.blame] = 1;
-        this.toast('TANTRUM!', 'bad');
+        // High and smaller: Old Misery's curse bubble owns the middle of the shot.
+        this.toast('TANTRUM!', document.documentElement.dataset.noscene ? 'bad' : 'tantrum');
         this.logoTantrum();
         break;
       case 'chatter': this.toast('chatter…', 'soft'); break;
@@ -90,7 +91,7 @@ export class Hud {
     }
   }
 
-  /** @param {string} text @param {'bad'|'soft'|'big'|'title'|'turn'} kind @param {string} [color] */
+  /** @param {string} text @param {'bad'|'soft'|'big'|'title'|'turn'|'tantrum'} kind @param {string} [color] */
   toast(text, kind, color) {
     const el = $('toast');
     el.textContent = text;

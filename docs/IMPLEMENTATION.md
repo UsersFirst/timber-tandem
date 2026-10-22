@@ -112,6 +112,26 @@ A seat's samples have the calibrated saw offset subtracted (`sawLagMs`, measured
 
 Grandma (solo), when chosen in the lobby, fills seat B and is drawn as the Georgian goose (a stand-in until her model exists).
 
+## The tantrum (scene/tantrum.js)
+
+About 1.2 s, built to read from the sofa and to stay funny when it happens a lot:
+
+| Time | Beat |
+|---|---|
+| 0 | **Snap.** The blade buckles (push: a bow and an S) or twangs (tug: a fast plucked-string wave), jumps out of the kerf, kicks toward the blamed handle and glows ember-orange. Sawdust spits from both ends of the kerf, steam jets out like a kettle, and the camera punches in. |
+| 0.04 s | **Curse.** Old Misery's grawlix bubble ("#@%!", rotating) pops over the blade, its tail pointing at whoever caused it, trembling as it calms. |
+| 0–0.6 s | **Recoil.** Push: the pusher is kicked back (head whipped, a hop, the hat flies off and drops back, feathers up, a squawk, one wing thrown out and back). Tug: nobody lets go. Both are yanked in toward the trunk, then honk at each other. |
+| 0.3 s | **The take.** The partner gives the camera a flat look. Grandma instead draws herself up and tuts over her spectacles (with her tut sound). |
+| 0.5–0.9 s | **Shake it off.** The blamed goose shakes its head; a puff of steam from its head. |
+
+- **Repeats are smaller.** A tantrum within 2.5 s of the last one gets a smaller take: no hat, no camera look, a shorter bubble.
+- **How it works.** Each goose has spring channels layered on the clip (spine lean and twist, neck whip, head look and tilt, jaw, hop, shove, fluff, tail; scene/geese.js). The hats are re-skinned from Head onto HatSocket at load, so they can fly. The saw has spring bend modes plus jump, kick, roll and yaw (scene/saw.js).
+- **On the HUD,** the TANTRUM! word sits high and smaller, so the bubble owns the middle of the shot.
+- **Review tools** (`node scripts/serve.mjs 8792` first):
+  - `node scripts/dev-tantrum-strip.mjs <tag> <A|B|-> <push|tug> <saw|close|A|B> [castB]` makes frame-exact contact sheets.
+  - `node scripts/dev-tantrum-clip.mjs <name> [castB]` makes a 30 fps mp4.
+  - Both write to scripts/out/tantrum/.
+
 ## Tests
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing.
@@ -169,6 +189,8 @@ Log: `~/Downloads/timber-spike-1792590647544.json` (140 s, raw sensors).
   - **The test log:** always on, saved in the browser every 2 s.
 
 ### Open for Pete (not in the plan; kept small, easy to change)
+
+0. **The tantrum's gags** (above) are mine: the curse bubble, the hat flying off, the take to camera, and Grandma's tut. Any of them is easy to drop or change.
 
 1. **Landing:** shown as degrees off the skid, with the words skid / close / wide / privy. There are no stars.
 2. **Grandma holds her handle level.** Solo, you steer at half strength (the blade leans by the average of the two twists, PLAN §4.4).

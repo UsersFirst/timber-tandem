@@ -79,7 +79,7 @@ $('blame').onchange = () => { view.blame = $('blame').value || null; };
 $('lit').onchange = () => { view.litFace = $('lit').value || null; };
 for (const b of document.querySelectorAll('[data-hit]')) b.onclick = () => { const [s, k] = b.dataset.hit.split(':'); sc.hit(s, k); };
 $('bite').onclick = () => sc.bite();
-$('tantrum').onclick = () => sc.tantrum(view.blame);
+$('tantrum').onclick = () => sc.tantrum(view.blame, view.e > 0 ? 'tug' : 'push');
 $('chatter').onclick = () => sc.chatter();
 $('fall').onclick = async () => { view.phase = 'fall'; await sc.fall(view.lean * 25); view.phase = 'done'; sc.celebrate(); };
 $('celebrate').onclick = () => sc.celebrate();
@@ -112,6 +112,10 @@ async function demo() {
 $('demo').onclick = demo;
 window.__demo = demo;
 
+// ?manual: no animation loop; window.__step(ms, n) advances n fixed steps
+// (frame-exact captures for scripts/dev-tantrum-strip.mjs).
+let simT = 0;
+window.__step = (ms = 16.67, n = 1) => { for (let i = 0; i < n; i++) { simT += ms; if ($('auto').checked || window.__autoSaw) view.s = -Math.cos(Math.PI * simT / 600); sc.update(ms, view); } };
 let last = performance.now(), frames = 0, acc = 0;
 function loop(now) {
   const dt = now - last; last = now;
@@ -123,7 +127,7 @@ function loop(now) {
 }
 addEventListener('resize', () => sc.resize(innerWidth, innerHeight));
 sc.resize(innerWidth, innerHeight);
-requestAnimationFrame(loop);
+if (!q.has('manual')) requestAnimationFrame(loop);
 document.title = 'READY';
 </script>
 </body>

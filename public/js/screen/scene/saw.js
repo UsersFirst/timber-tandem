@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { paint, placed } from './environment.js';
+import { Spring } from './geese.js';
 
 /** Blade length between the handles (m). */
 export const BLADE_L = 1.9;
@@ -88,6 +89,18 @@ export class Saw {
     this.buck = 0;     // tantrum shake, decays
     this.jitter = 0;   // chatter, decays
     this.flash = { A: 0, B: 0 };
+    // Tantrum: the blade's bend modes (m), and the whole saw's jump out of the
+    // kerf, kick along the stroke, roll and yaw. All springs at rest at 0.
+    this.fit = {
+      bow: new Spring(6.5, 0.12),    // first mode: a bow up
+      wave: new Spring(10.5, 0.09),  // second mode: an S
+      twang: new Spring(19, 0.05),   // third mode, fast: a plucked-string twang
+      jump: new Spring(3.6, 0.3),    // m up out of the kerf
+      kick: new Spring(3.2, 0.42),   // m along x
+      roll: new Spring(7, 0.18),     // rad about the stroke axis
+      yaw: new Spring(5, 0.25),      // rad about up
+    };
+    this.heat = 0;
   }
 
   /** World positions where a goose's two hands grip its handle. @param {'A'|'B'} seat */
@@ -110,6 +123,9 @@ export class Saw {
     this.shimmer += (Math.max(0, v.e) - this.shimmer) * Math.min(1, dt * 18);
     this.buck = Math.max(0, this.buck - dt * 1.6);
     this.jitter = Math.max(0, this.jitter - dt * 4);
+    this.heat = Math.max(0, this.heat - dt * 0.9);
+    const F = this.fit;
+    for (const k of Object.keys(F)) /** @type {any} */ (F)[k].step(dt);
 
     const pos = this.bladeGeo.attributes.position;
     const base = this.bladeBase;
@@ -117,7 +133,9 @@ export class Saw {
     for (let i = 0; i < pos.count; i++) {
       const x = base[i * 3];
       const u = (x + BLADE_L / 2) / BLADE_L;
-      let y = this.bow * Math.sin(Math.PI * THREE.MathUtils.clamp(u, 0, 1));
+      const uc = THREE.MathUtils.clamp(u, 0, 1);
+      let y = this.bow * Math.sin(Math.PI * uc);
+      y += F.bow.x * Math.sin(Math.PI * uc) + F.wave.x * Math.sin(2 * Math.PI * uc) + F.twang.x * Math.sin(3 * Math.PI * uc);
       if (this.shimmer > 0.02) y += Math.sin(this.time * 90 + x * 28) * 0.006 * this.shimmer;
       y += shakeY * Math.sin(Math.PI * u * 2);
       if (this.jitter > 0) y += Math.sin(this.time * 140 + x * 60) * 0.004 * this.jitter;
@@ -127,31 +145,68 @@ export class Saw {
     this.bladeGeo.computeVertexNormals();
 
     // Lean tilts the whole saw (roll about the stroke axis).
-    this.tilt.rotation.x = THREE.MathUtils.degToRad(12) * THREE.MathUtils.clamp(v.lean, -1, 1);
+    this.tilt.rotation.x = THREE.MathUtils.degToRad(12) * THREE.MathUtils.clamp(v.lean, -1, 1) + F.roll.x;
+    this.tilt.rotation.y = F.yaw.x;
+    /** Height above the kerf (m): the scene adds it to the cut height. */
+    this.lift = Math.max(-0.01, F.jump.x);
 
     // Slide along x: s = +1 means slid fully toward A (−x).
-    this.group.position.x = -v.s * TRAVEL;
+    this.group.position.x = -v.s * TRAVEL + F.kick.x;
 
     // Strain colour on the steel, blame glow on the handle.
     const zoneEm = v.zone === 'red' ? 0x6a0e00 : v.zone === 'amber' ? 0x3a2000 : 0x1c1f22;
-    this.bladeMat.emissive.setHex(this.buck > 0.05 ? 0x7a1200 : zoneEm);
+    this.bladeMat.emissive.setHex(zoneEm);
+    this.bladeMat.color.setHex(0xdfe4ea);
+    if (this.heat > 0.01) {
+      this.bladeMat.color.lerp(_ember, Math.min(1, this.heat) * 0.85);
+      // Red-hot temper: flickers, then cools through orange.
+      const h = Math.min(1, this.heat) * (0.75 + 0.25 * Math.sin(this.time * 38));
+      this.bladeMat.emissive.lerp(_hot.setRGB(0.95, 0.22 + 0.2 * (1 - this.heat), 0.04), h);
+    }
     for (const seat of /** @type {const} */ (['A', 'B'])) {
       const want = v.blame === seat && v.zone !== 'green' ? 1 : 0;
       this.flash[seat] = Math.max(want ? 0.8 : 0, this.flash[seat] - dt * 1.4);
       const k = Math.min(1, this.flash[seat]);
       this.handles[seat].mat.emissive.setRGB(0.9 * k, 0.08 * k, 0.02 * k);
-      this.handles[seat].mesh.position.y = this.buck > 0 ? Math.sin(this.time * 55 + (seat === 'A' ? 0 : 1)) * 0.02 * this.buck : 0;
+      this.handles[seat].mesh.position.y = this.buck > 0 ? Math.sin(this.time * 55 + (seat === 'A' ? 0 : 1)) * 0.025 * this.buck : 0;
+      this.handles[seat].mesh.rotation.z = this.buck > 0 ? Math.sin(this.time * 41 + (seat === 'A' ? 2 : 0)) * 0.12 * this.buck : 0;
     }
   }
 
-  /** @param {'A'|'B'|null} blame */
-  tantrum(blame) {
+  /**
+   * Old Misery throws a fit. A push buckles the blade up and kicks it back at
+   * the pusher; a tug (both pulling) twangs it like a plucked string.
+   * @param {'A'|'B'|null} blame @param {'push'|'tug'} [kind] @param {boolean} [small] a repeat
+   */
+  tantrum(blame, kind = 'push', small = false) {
+    const F = this.fit;
+    const g = small ? 0.6 : 1;
+    const side = blame === 'A' ? -1 : blame === 'B' ? 1 : 0; // toward the blamed handle (x)
     this.buck = 1;
-    if (blame) this.flash[blame] = 1.6;
+    this.heat = 1.25;
+    if (blame) this.flash[blame] = 1.8;
+    if (kind === 'push') {
+      F.bow.nudge(0.3 * g);
+      F.wave.kick((side * 3.4 || 2) * g);
+      F.twang.kick(0.9 * g);
+      F.jump.kick(1.3 * g);
+      F.kick.kick(side * 1.1 * g);
+      F.roll.kick(3.5 * (side || 1) * g);
+      F.yaw.kick(1.2 * (side || 1) * g);
+    } else {
+      F.twang.nudge(0.1 * g);
+      F.wave.nudge(0.05 * g);
+      F.jump.kick(0.8 * g);
+      F.roll.kick(6 * g);
+      F.yaw.kick(0.5 * (side || 1) * g);
+    }
   }
 
   chatter() { this.jitter = 1; }
 }
+
+const _hot = new THREE.Color();
+const _ember = new THREE.Color(0x7a2410);
 
 /** A small hatchet: handle + head, vertex coloured. Grip at the origin, head up +y. */
 export function makeHatchet() {

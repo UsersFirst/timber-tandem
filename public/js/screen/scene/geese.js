@@ -84,6 +84,27 @@ function mergeSkinned(root) {
   }
 }
 
+/**
+ * The hats are skinned to the Head bone. Move their weights onto HatSocket
+ * (a child of Head, so the rest pose is unchanged) so a tantrum can knock the
+ * hat off. Geometry is shared between clones: do it once per geometry.
+ * @param {THREE.Object3D} root
+ */
+function hatOnSocket(root) {
+  root.traverse((o) => {
+    const m = /** @type {THREE.SkinnedMesh} */ (o);
+    if (!m.isSkinnedMesh || !/_hat_/.test(/** @type {any} */ (m.material).name || '') || m.geometry.userData.hatOnSocket) return;
+    const bones = m.skeleton.bones;
+    const head = bones.findIndex((b) => b.name === 'Head');
+    const sock = bones.findIndex((b) => b.name === 'HatSocket');
+    if (head < 0 || sock < 0) return;
+    const si = m.geometry.attributes.skinIndex;
+    for (let i = 0; i < si.count; i++) for (let k = 0; k < 4; k++) if (si.getComponent(i, k) === head) si.setComponent(i, k, sock);
+    si.needsUpdate = true;
+    m.geometry.userData.hatOnSocket = true;
+  });
+}
+
 /** Analytic two-bone IK on one arm. */
 class ArmIK {
   /** @param {THREE.Bone} upper @param {THREE.Bone} lower @param {THREE.Bone} hand */
@@ -144,6 +165,80 @@ function rotateBoneToward(bone, from, to, weight) {
 }
 
 /**
+ * A damped spring toward a target (semi-implicit Euler). `kick(v)` adds
+ * velocity, `nudge(x)` adds displacement. f = natural frequency (Hz),
+ * z = damping ratio (1 = no overshoot, lower = bouncier).
+ */
+export class Spring {
+  /** @param {number} f @param {number} z */
+  constructor(f, z) { this.f = f; this.z = z; this.x = 0; this.v = 0; this.target = 0; }
+  /** @param {number} dt */
+  step(dt) {
+    const w = 2 * Math.PI * this.f;
+    // Sub-step so a long frame can't blow a stiff spring up.
+    const n = Math.max(1, Math.ceil(dt / (1 / 240)));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      this.v += (-w * w * (this.x - this.target) - 2 * this.z * w * this.v) * h;
+      this.x += this.v * h;
+    }
+    return this.x;
+  }
+  /** @param {number} v */
+  kick(v) { this.v += v; return this; }
+  /** @param {number} x */
+  nudge(x) { this.x += x; return this; }
+  get busy() { return Math.abs(this.x - this.target) > 1e-3 || Math.abs(this.v) > 1e-3; }
+}
+
+/**
+ * Reaction channels layered on top of the clip, all in the goose's own frame
+ * (+z forward, +x its left, +y up). Each is a spring at rest at 0; the
+ * choreography (scene/tantrum.js) kicks them.
+ */
+function makeReactor() {
+  return {
+    /** Spine pitch, rad: + leans forward (over the saw), − rears back. */
+    lean: new Spring(3.2, 0.32),
+    /** Spine yaw, rad: + turns to its left. */
+    twist: new Spring(3, 0.4),
+    /** Neck pitch, rad, spread down the neck: + head forward/down, − whipped back. */
+    neck: new Spring(4.5, 0.28),
+    /** Head yaw, rad: + looks to its left. */
+    look: new Spring(5, 0.55),
+    /** Head roll, rad (a confused tilt). */
+    tilt: new Spring(4, 0.35),
+    /** Beak open 0..1 (squawk). */
+    jaw: new Spring(9, 0.7),
+    /** Root hop, m. */
+    hop: new Spring(4.2, 0.35),
+    /** Root shove along its forward axis, m: − knocked back. */
+    shove: new Spring(2.6, 0.55),
+    /** Feathers ruffled: body scale − 1. */
+    fluff: new Spring(5.5, 0.22),
+    /** Hat spin, rad (the lift is ballistic: `popHat`). */
+    hatSpin: new Spring(2.2, 0.5),
+    /** Tail flick, rad. */
+    tail: new Spring(6, 0.25),
+  };
+}
+/** @typedef {ReturnType<typeof makeReactor>} Reactor */
+
+const _axis = new THREE.Vector3(), _qa = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _qr = new THREE.Quaternion();
+/**
+ * Rotate a bone by `angle` about an axis given in the goose root's frame.
+ * @param {THREE.Bone|undefined} bone @param {THREE.Object3D} root @param {number} ax @param {number} ay @param {number} az @param {number} angle
+ */
+function rotateInRoot(bone, root, ax, ay, az, angle) {
+  if (!bone || Math.abs(angle) < 1e-5) return;
+  root.getWorldQuaternion(_qr);
+  (bone.parent || root).getWorldQuaternion(_qp);
+  _axis.set(ax, ay, az).applyQuaternion(_qr).applyQuaternion(_qp.invert()).normalize();
+  bone.quaternion.premultiply(_qa.setFromAxisAngle(_axis, angle));
+  bone.updateMatrixWorld(true);
+}
+
+/**
  * One goose on the set.
  */
 export class Goose {
@@ -153,6 +248,7 @@ export class Goose {
     this.root = new THREE.Group();
     this.root.name = 'goose:' + id;
     this.model = gltf.scene;
+    hatOnSocket(this.model);
     mergeSkinned(this.model);
     const box = new THREE.Box3().setFromObject(this.model);
     const h = box.max.y - box.min.y;
@@ -187,6 +283,17 @@ export class Goose {
     this.sway = 0;   // -1..1 spine pitch (+ = leaning back, pulling)
     this.bob = 0;
     this.yaw = 0;
+    /** Tantrum and flinch reactions (springs, kicked by scene/tantrum.js). */
+    this.react = makeReactor();
+    /** The hat in flight: height above the head (m) and vertical speed. */
+    this.hat = { y: 0, v: 0, tip: 0 };
+    // Bones the reactions touch go back to rest before each mixer update, so
+    // a bone no clip animates (jaw, tail, hat) can't pile rotations up.
+    /** @type {[THREE.Bone, THREE.Quaternion, THREE.Vector3][]} */
+    this._rest = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Neck1', 'Neck2', 'Neck3', 'Head', 'Jaw', 'Tail', 'HatSocket']
+      .filter((n) => this.bones[n]).map((n) => [this.bones[n], this.bones[n].quaternion.clone(), this.bones[n].position.clone()]);
+    this._modelScale = this.model.scale.clone();
+    this._modelY = this.model.position.y;
 
     if (id === 'grandma') this._dressGrandma();
   }
@@ -237,6 +344,7 @@ export class Goose {
    * @param {{left?: THREE.Vector3|null, right?: THREE.Vector3|null, poleL?: THREE.Vector3, poleR?: THREE.Vector3}} hands  world targets
    */
   update(dt, hands) {
+    for (const [bone, q, p] of this._rest) { bone.quaternion.copy(q); bone.position.copy(p); }
     this.mixer.update(dt);
     // Body language on top of the clip.
     const sp = this.bones.Spine1;
@@ -245,11 +353,64 @@ export class Goose {
     if (sp2) sp2.rotation.x += this.sway * 0.06;
     const nk = this.bones.Neck;
     if (nk) nk.rotation.x += this.bob * 0.05;
+    this._applyReactions(dt);
     this.root.updateMatrixWorld(true);
     const w = this.ikWeight;
     if (w <= 0.001) return;
     if (hands.left && this.armL) this.armL.solve(hands.left, hands.poleL || this.defaultPole(1), w);
     if (hands.right && this.armR) this.armR.solve(hands.right, hands.poleR || this.defaultPole(-1), w);
+  }
+
+  /** Knock the hat up off the head; it falls back under gravity and bounces once. @param {number} v m/s */
+  popHat(v) { this.hat.v = Math.max(this.hat.v, v); this.hat.tip = Math.sign(Math.random() - 0.5) || 1; }
+
+  /** Step the reaction springs and pose the bones (after the clip). @param {number} dt */
+  _applyReactions(dt) {
+    const R = this.react, b = this.bones, root = this.root;
+    for (const k of Object.keys(R)) /** @type {any} */ (R)[k].step(dt);
+    const H = this.hat;
+    if (H.y > 0 || H.v > 0) {
+      H.v -= 9.8 * dt;
+      H.y += H.v * dt;
+      if (H.y <= 0) { H.y = 0; H.v = H.v < -1 ? -H.v * 0.25 : 0; }
+    }
+    // Root-level offsets: the scene reads these when it places the goose.
+    this.offset = { up: Math.max(-0.02, R.hop.x), fwd: R.shove.x };
+    // Feathers ruffle: puff out sideways and front-back, squash a touch.
+    const f = R.fluff.x;
+    this.model.scale.set(this._modelScale.x * (1 + f), this._modelScale.y * (1 - f * 0.35), this._modelScale.z * (1 + f * 0.8));
+    this.model.position.y = this._modelY * (1 - f * 0.35);
+    this.model.updateMatrixWorld(true);
+    // Spine: pitch (about its left axis) and yaw, spread over three bones.
+    rotateInRoot(b.Spine, root, 1, 0, 0, R.lean.x * 0.3);
+    rotateInRoot(b.Spine1, root, 1, 0, 0, R.lean.x * 0.35);
+    rotateInRoot(b.Spine2, root, 1, 0, 0, R.lean.x * 0.35);
+    rotateInRoot(b.Spine1, root, 0, 1, 0, R.twist.x * 0.5);
+    rotateInRoot(b.Spine2, root, 0, 1, 0, R.twist.x * 0.5);
+    // Neck: a whip travels up the chain (each link a little more).
+    const nk = R.neck.x;
+    rotateInRoot(b.Neck, root, 1, 0, 0, nk * 0.18);
+    rotateInRoot(b.Neck1, root, 1, 0, 0, nk * 0.22);
+    rotateInRoot(b.Neck2, root, 1, 0, 0, nk * 0.26);
+    rotateInRoot(b.Neck3, root, 1, 0, 0, nk * 0.34);
+    // Head: yaw about the root's up (looks round at the partner), and roll.
+    rotateInRoot(b.Neck2, root, 0, 1, 0, R.look.x * 0.35);
+    rotateInRoot(b.Head, root, 0, 1, 0, R.look.x * 0.65);
+    rotateInRoot(b.Head, root, 0, 0, 1, R.tilt.x);
+    // Beak: the jaw hinges about the goose's left axis.
+    rotateInRoot(b.Jaw, root, 1, 0, 0, Math.max(0, R.jaw.x) * 0.55);
+    rotateInRoot(b.Tail, root, 0, 1, 0, R.tail.x);
+    // Hat: lifts off the head and spins (it's skinned to HatSocket).
+    if (b.HatSocket && b.HatSocket.parent) {
+      const lift = H.y;
+      // Straight up in the world, converted into the head's space.
+      const w = b.HatSocket.getWorldPosition(new THREE.Vector3());
+      w.y += lift;
+      b.HatSocket.position.copy(b.HatSocket.parent.worldToLocal(w));
+      b.HatSocket.updateMatrixWorld(true);
+      rotateInRoot(b.HatSocket, root, 0, 1, 0, R.hatSpin.x);
+      rotateInRoot(b.HatSocket, root, 1, 0, 0, -Math.min(0.6, lift * 2.4) * H.tip);
+    }
   }
 
   /** Elbow hint: below and out to the side of the shoulder, a little behind. @param {1|-1} side */
