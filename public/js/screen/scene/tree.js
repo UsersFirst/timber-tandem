@@ -10,6 +10,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { PRIVY_DEG } from '../../core/tree.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE, paint, placed, flatMat, rng } from './environment.js';
 
@@ -54,6 +55,10 @@ export class FellingTree {
     this.mat = flatMat();
     this.kind = 'small';
     this.targetDeg = 0;
+    /** The fall in progress lands on the privy (it gets knocked flat). */
+    this.privyHit = false;
+    /** @type {THREE.Group|null} */
+    this.privy = null;
     this.fallDeg = 0;
     this.phi = 0;        // fall angle (rad): 0 standing, ~π/2 down
     this.omega = 0;
@@ -157,17 +162,43 @@ export class FellingTree {
     this.skid.rotation.y = -THREE.MathUtils.degToRad(targetDeg);
     this.scene.add(this.skid);
 
-    // Ghost fall arrow (predicted direction), shown while sawing.
+    // The target zone: a green chalk wedge either side of the skid line
+    // (the "skid" landing band, ±4°), so the aim arrow has something to hit.
+    const zone = new THREE.Shape();
+    const wR = d.height * 0.95, wA = THREE.MathUtils.degToRad(4);
+    zone.moveTo(0, 0);
+    for (let i = 0; i <= 8; i++) { const a = -wA + (2 * wA * i) / 8; zone.lineTo(Math.sin(a) * wR, Math.cos(a) * wR); }
+    zone.lineTo(0, 0);
+    const wg = new THREE.ShapeGeometry(zone);
+    wg.rotateX(-Math.PI / 2); // lies on the ground, pointing −z
+    const wm = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ color: 0x7ee08a, transparent: true, opacity: 0.22, depthWrite: false }));
+    wm.position.set(0, 0.018, -R);
+    this.skid.add(wm);
+
+    // The privy: Grandma's outhouse, out where a bad fall lands (PLAN §8).
+    if (this.privy) this.scene.remove(this.privy);
+    this.privy = makePrivy();
+    const pTh = THREE.MathUtils.degToRad(PRIVY_DEG + 5), pD = d.height * 0.86;
+    this.privy.position.set(Math.sin(pTh) * pD, 0, -Math.cos(pTh) * pD);
+    this.privy.rotation.y = -pTh; // door toward the tree
+    this.privy.userData.tip = 0;
+    this.privy.userData.tipping = false;
+    this.scene.add(this.privy);
+
+    // Ghost fall arrow (predicted direction), shown while sawing. Long and
+    // bright enough to read past the trunk; its colour says how the fall
+    // would land: green on the skid, amber close, red for the privy.
     if (this.ghost) this.scene.remove(this.ghost);
     const arrowShape = new THREE.Shape();
-    const L = d.height * 0.8, wd = 0.22;
+    const L = d.height * 0.95, wd = 0.34;
     arrowShape.moveTo(-wd / 2, 0); arrowShape.lineTo(wd / 2, 0); arrowShape.lineTo(wd / 2, L - 0.7);
     arrowShape.lineTo(wd * 2, L - 0.7); arrowShape.lineTo(0, L); arrowShape.lineTo(-wd * 2, L - 0.7); arrowShape.lineTo(-wd / 2, L - 0.7);
     const ag = new THREE.ShapeGeometry(arrowShape);
     ag.rotateX(-Math.PI / 2); // lies on ground pointing -z
     this.ghostMat = new THREE.MeshBasicMaterial({ color: 0xfff2c4, transparent: true, opacity: 0, depthWrite: false });
     this.ghost = new THREE.Mesh(ag, this.ghostMat);
-    this.ghost.position.set(0, 0.03, -R - 0.2);
+    this.ghost.position.set(0, 0.035, -R - 0.1);
+    this.ghost.renderOrder = 2;
     this.scene.add(this.ghost);
 
     this.phi = 0; this.omega = 0; this.falling = false; this.landed = false;
@@ -192,10 +223,30 @@ export class FellingTree {
   /** Depth of the cut from the +z face, m. */
   cutDepth(f) { return f * this.radius * 2 * 0.82; }
 
-  /** @param {number} lean -1..1 @param {number} opacity */
-  setGhost(lean, opacity) {
-    this.ghost.rotation.y = -THREE.MathUtils.degToRad(lean * 25);
-    this.ghostMat.opacity += (opacity - this.ghostMat.opacity) * 0.15;
+  /**
+   * @param {number} deg where the fall is heading (+ toward B) @param {string} grade
+   * @param {number} show 0..1
+   */
+  setGhost(deg, grade, show) {
+    this.ghost.rotation.y = -THREE.MathUtils.degToRad(deg);
+    const col = grade === 'skid' ? 0x7ee08a : grade === 'close' ? 0xf2b24c : grade === 'privy' ? 0xff5a4a : 0xfff2c4;
+    this.ghostMat.color.lerp(_col.setHex(col), 0.2);
+    this.ghostMat.opacity += (show * 0.72 - this.ghostMat.opacity) * 0.15;
+  }
+
+  /** The privy's base (world). */
+  privyPos() { return this.privy.position.clone(); }
+
+  /** A fall on the privy knocks it flat (it tips away from the tree). */
+  knockPrivy() { this.privy.userData.tipping = true; }
+
+  /** @param {number} dt */
+  updateProps(dt) {
+    const u = this.privy?.userData;
+    if (!u || !u.tipping || u.tip >= 1) return;
+    u.tip = Math.min(1, u.tip + dt * 2.2);
+    const k = u.tip * u.tip; // falls faster as it goes
+    this.privy.children[0].rotation.x = -k * (Math.PI / 2 - 0.08);
   }
 
   /** Glow the notch face on a player's turn, in their seat colour. @param {number|null} color @param {number} pulse 0..1 */
@@ -253,4 +304,43 @@ export class FellingTree {
     }
     return pts;
   }
+}
+
+const _col = new THREE.Color();
+
+/**
+ * Grandma's privy: a little plank outhouse with a crescent moon on the door.
+ * The model sits inside a hinge group at its back edge, so it can tip over.
+ * Faces −z (the door toward the tree once placed).
+ */
+function makePrivy() {
+  const g = new THREE.Group();
+  g.name = 'privy';
+  const hinge = new THREE.Group();
+  hinge.position.set(0, 0, -0.55); // back edge: it tips away from the tree
+  g.add(hinge);
+  const body = new THREE.Group();
+  body.position.set(0, 0, 0.55);
+  hinge.add(body);
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a33, roughness: 0.9, flatShading: true });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x4a2f1c, roughness: 0.9, flatShading: true });
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.0, 1.0), wood);
+  box.position.y = 1.0;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.12, 1.3), dark);
+  roof.position.set(0, 2.08, 0); roof.rotation.x = 0.18;
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.6, 0.04), dark);
+  door.position.set(0, 0.86, 0.51);
+  // The crescent: a bright disc with a darker disc over one side.
+  const moonMat = new THREE.MeshBasicMaterial({ color: 0xffe08a });
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), moonMat);
+  moon.position.set(0, 1.42, 0.535);
+  const bite = new THREE.Mesh(new THREE.CircleGeometry(0.085, 16), dark);
+  bite.position.set(0.05, 1.45, 0.537);
+  for (const m of [box, roof, door]) { m.castShadow = true; m.receiveShadow = true; }
+  body.add(box, roof, door, moon, bite);
+  // The door faces +z in the model; turn it to face the tree (−z of the group is away).
+  hinge.rotation.y = 0;
+  g.rotation.order = 'YXZ';
+  body.rotation.y = 0;
+  return g;
 }

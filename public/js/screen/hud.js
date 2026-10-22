@@ -12,7 +12,7 @@
 
 import { SAW, targetS } from '../core/saw-model.js';
 import { SEATS, CODE_PREFIX } from '../core/protocol.js';
-import { MAX_FALL_DEG } from '../core/tree.js';
+import { MAX_FALL_DEG, PRIVY_DEG } from '../core/tree.js';
 
 const COLOR = { A: SEATS[0].color, B: SEATS[1].color };
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -76,7 +76,14 @@ export class Hud {
         break;
       case 'chatter': this.toast('chatter…', 'soft'); break;
       case 'caption': this.showCaption(ev.who, ev.text, ev.holdMs); break;
-      case 'fall': setTimeout(() => this.toast('TIMBER!', 'big'), 900); break;
+      case 'fall': {
+        setTimeout(() => this.toast('TIMBER!', 'big'), 900);
+        // Call the landing as it hits (the score card comes later).
+        const g = ev.landing?.grade;
+        const say = { skid: ['ON THE SKID!', '#7ee08a'], close: ['Close!', '#f2b24c'], wide: ['Wide of the skid', '#f6ead8'], privy: ['GRANDMA’S PRIVY!', '#ff5a4a'] }[g];
+        if (say) setTimeout(() => this.toast(say[0], 'title', say[1]), 3150);
+        break;
+      }
       case 'score': this.showScore(ev.score, ev.last); break;
       case 'end': this.showEnd(ev.scores); break;
       case 'phase':
@@ -422,11 +429,53 @@ export class Hud {
     g.textBaseline = 'alphabetic';
   }
 
+  /**
+   * The aim map: the clearing from above, the tree at the bottom, the fall
+   * fanning up away from you (as on screen). The green wedge is the skid,
+   * amber is close, the privy sits out at its angle; the arrow is where the
+   * tree would fall right now.
+   */
   drawDial(v) {
-    const el = $('dial-needle'), tgt = $('dial-target');
-    const deg = v.phase === 'saw' || v.phase === 'fall' ? v.fallPreview : 0;
-    el.style.transform = `rotate(${(deg / MAX_FALL_DEG) * 60}deg)`;
-    tgt.style.transform = `rotate(${(v.targetDeg / MAX_FALL_DEG) * 60}deg)`;
+    const dial = /** @type {HTMLElement} */ (document.querySelector('.dial'));
+    dial.style.display = v.phase === 'saw' ? '' : 'none';
+    if (v.phase !== 'saw') return;
+    const c = /** @type {HTMLCanvasElement} */ ($('aim'));
+    const k = devicePixelRatio;
+    const W = (c.width = c.clientWidth * k), H = (c.height = c.clientHeight * k);
+    const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+    g.clearRect(0, 0, W, H);
+    const cx = W / 2, cy = H - 10 * k, R = Math.min(H - 18 * k, W / 2 - 8 * k);
+    // Screen angle: 0 = straight up; the fan spans ±MAX_FALL_DEG, drawn wider for legibility.
+    const SPREAD = 2.4;
+    const ang = (deg) => (deg * SPREAD * Math.PI) / 180;
+    const sector = (a0, a1, r, fill) => { g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, r, -Math.PI / 2 + ang(a0), -Math.PI / 2 + ang(a1)); g.closePath(); g.fillStyle = fill; g.fill(); };
+    sector(-MAX_FALL_DEG, MAX_FALL_DEG, R, 'rgba(255,255,255,.07)');
+    sector(v.targetDeg - 10, v.targetDeg + 10, R, 'rgba(242,178,76,.28)');
+    sector(v.targetDeg - 4, v.targetDeg + 4, R, 'rgba(126,224,138,.55)');
+    if (v.targetDeg < PRIVY_DEG - 6) sector(PRIVY_DEG, MAX_FALL_DEG, R, 'rgba(255,90,74,.3)');
+    const at = (deg, r) => [cx + Math.sin(ang(deg)) * r, cy - Math.cos(ang(deg)) * r];
+    g.font = `700 ${10 * k}px system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.fillStyle = '#bff0c5';
+    const [sx, sy] = at(v.targetDeg, R * 0.62);
+    g.fillText('SKID', sx, sy);
+    if (v.targetDeg < PRIVY_DEG - 6) { const [px, py] = at(PRIVY_DEG + 3.5, R * 0.7); g.fillStyle = '#ffb0a6'; g.fillText('PRIVY', px, py); }
+    // The arrow: where the tree would fall now.
+    const col = v.aimGrade === 'skid' ? '#7ee08a' : v.aimGrade === 'close' ? '#f2b24c' : v.aimGrade === 'privy' ? '#ff5a4a' : '#fff2c4';
+    const [ax, ay] = at(v.fallPreview, R * 0.95);
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 5 * k; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(ax, ay); g.stroke();
+    const a = ang(v.fallPreview);
+    g.beginPath();
+    g.moveTo(ax + Math.sin(a) * 6 * k, ay - Math.cos(a) * 6 * k);
+    g.lineTo(ax + Math.cos(a) * 8 * k, ay + Math.sin(a) * 8 * k);
+    g.lineTo(ax - Math.cos(a) * 8 * k, ay - Math.sin(a) * 8 * k);
+    g.closePath(); g.fill();
+    // The tree.
+    g.fillStyle = '#8a5a2b'; g.beginPath(); g.arc(cx, cy, 6 * k, 0, Math.PI * 2); g.fill();
+    const lbl = $('aim-lbl');
+    lbl.textContent = v.aimGrade === 'skid' ? 'ON THE SKID — HOLD IT' : v.aimGrade === 'close' ? 'CLOSE — TWIST A LITTLE' : v.aimGrade === 'privy' ? 'THAT’S THE PRIVY!' : 'TWIST YOUR FIST TO AIM';
+    lbl.style.color = col;
   }
 
   // ---------------- lobby ----------------

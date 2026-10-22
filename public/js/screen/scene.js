@@ -35,6 +35,8 @@ import { TantrumFx, geeseTantrum } from './scene/tantrum.js';
  * @property {number} cutFrac  0..1
  * @property {number} notchFrac 0..1
  * @property {'A'|'B'|null} litFace
+ * @property {number} [aimDeg]    where the fall is heading now (deg, + toward B)
+ * @property {'skid'|'close'|'wide'|'privy'} [aimGrade]
  */
 
 /** @typedef {'winston'|'victoria'|'grandma'} CastId */
@@ -104,10 +106,10 @@ export async function createScene(canvas, opts = {}) {
   const camGoal = { pos: cam.pos.clone(), at: cam.at.clone(), fov: cam.fov };
   let shake = 0;
 
-  /** @param {'intro'|'notch'|'saw'|'wide'} mode */
+  /** @param {'intro'|'notch'|'saw'|'wide'|'skid'} mode */
   function setCamera(mode) {
-    const c = CAMERAS[mode] || CAMERAS.saw;
-    const cut = mode === 'notch' || cam.mode === 'notch';
+    const c = CAMERAS[/** @type {keyof typeof CAMERAS} */ (mode)] || CAMERAS.saw;
+    const cut = mode === 'notch' || cam.mode === 'notch' || mode === 'skid';
     cam.mode = mode;
     camGoal.pos.set(c.pos[0], c.pos[1], c.pos[2]);
     camGoal.at.set(c.at[0], c.at[1], c.at[2]);
@@ -123,6 +125,16 @@ export async function createScene(canvas, opts = {}) {
       camGoal.pos.copy(mid).addScaledVector(side, dist).addScaledVector(d, -dist * 0.35).add(new THREE.Vector3(0, 2.6, 0));
       camGoal.at.copy(mid).add(new THREE.Vector3(0, H * 0.22, 0));
       camGoal.fov = 50;
+    }
+    if (mode === 'skid') {
+      // Behind the tree, up high, looking straight down the skid: the chalk
+      // line runs up the picture, so a fall on target lands right along it.
+      const th = THREE.MathUtils.degToRad(tree.targetDeg);
+      const d = new THREE.Vector3(Math.sin(th), 0, -Math.cos(th));
+      const H = tree.def.height;
+      camGoal.pos.copy(d).multiplyScalar(-4.2).add(new THREE.Vector3(0, H * 0.42 + 2.4, 0));
+      camGoal.at.copy(d).multiplyScalar(H * 0.62).add(new THREE.Vector3(0, 0.4, 0));
+      camGoal.fov = 52;
     }
     // The notch is on the far (−z) face, so its camera looks back toward the
     // couch. Cut to it (no swing) and mirror the picture, so Sir Winston
@@ -257,12 +269,18 @@ export async function createScene(canvas, opts = {}) {
     tree.setNotch(view.notchFrac);
     tree.setCut(view.cutFrac);
     tree.setLit(view.phase === 'notch' && view.litFace ? SEAT_COLOR[view.litFace] : null, 0.5 + 0.5 * Math.sin(time * 7));
-    tree.setGhost(view.lean, view.phase === 'saw' ? 0.6 : 0);
+    tree.setGhost(view.aimDeg ?? view.lean * 25, view.aimGrade || 'wide', view.phase === 'saw' ? 1 : 0);
+    tree.updateProps(dt);
 
     // Fall physics (slow-mo during the main fall).
     if (tree.falling && !tree.landed) {
       timeScale = tree.phi > 0.35 && tree.phi < 1.35 ? 0.4 : 1;
       const ev = tree.stepFall(dt);
+      if (ev === 'impact' && tree.privyHit) {
+        tree.knockPrivy();
+        fx.puff(tree.privyPos(), { n: 10, spread: 1.4, rise: 1.2, life: 2.4 });
+        fx.burst(tree.privyPos().add(new THREE.Vector3(0, 1.2, 0)), new THREE.Vector3(0, 1, 0), { n: 20, speed: 3.2, size: 0.06, color: 0x8a5a33, life: 1.6 });
+      }
       if (ev === 'impact' || ev === 'bounce') {
         shake = ev === 'impact' ? 1 : 0.4;
         for (const p of tree.trunkPoints(9)) fx.puff(p, { n: ev === 'impact' ? 5 : 2, spread: 1.0, rise: 0.9, life: 2.2 });
@@ -474,12 +492,13 @@ export async function createScene(canvas, opts = {}) {
       }, blame, kind, small);
     },
     chatter() { saw.chatter(); },
-    fall(angleDeg) {
+    fall(angleDeg, grade) {
       return new Promise((resolve) => {
         tree.startFall(angleDeg);
         tree.bounced = false;
+        tree.privyHit = grade === 'privy';
         fallJob = { resolve, settledAt: null };
-        setCamera('wide');
+        setCamera('skid');
         fx.burst(new THREE.Vector3(0, CUT_Y, -tree.radius * 0.6), new THREE.Vector3(0, 0.4, -1), { n: 10, speed: 1.2, size: 0.03 });
       });
     },
@@ -513,9 +532,9 @@ export async function createScene(canvas, opts = {}) {
  * @property {() => void} bite
  * @property {(blame: 'A'|'B'|null, kind?: 'push'|'tug') => void} tantrum
  * @property {() => void} chatter
- * @property {(angleDeg: number) => Promise<void>} fall
+ * @property {(angleDeg: number, grade?: string) => Promise<void>} fall
  * @property {() => void} celebrate
- * @property {(mode: 'intro'|'notch'|'saw'|'wide') => void} setCamera
+ * @property {(mode: 'intro'|'notch'|'saw'|'wide'|'skid') => void} setCamera
  * @property {(w: number, h: number) => void} resize
  * @property {{drawCalls: number, triangles: number}} info
  * @property {() => void} dispose

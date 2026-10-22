@@ -164,6 +164,20 @@ The screen opens on the **main menu** (arrow keys or a gamepad + Enter/A, mouse,
   6. `<uf-keypad>` and `<uf-join-code>` keep fixed key sizes and overflow a 390 px phone; Timber zooms them down under 480 px.
 - **Fixed:** the invite was only sent if the host's socket was already open, so a host that opened straight into Online (`?host=online`, or a reload) could refuse guests with 403. `RoomHost` now remembers the invite and re-sends it whenever the socket opens.
 
+## Aiming the fall (2026-10-22, Pete approved)
+
+So players know they can steer, where to aim, and how it went:
+- **Back cut, in the scene:**
+  - Grandma's **privy** stands out where a bad fall lands (PRIVY_DEG + 5°).
+  - A green chalk wedge marks the skid (±4°).
+  - The aim arrow on the ground is longer and brighter, and coloured by where the fall would land now: green on the skid, amber close, red for the privy (`view.aimGrade`).
+- **HUD aim map** (replaces the dial): the clearing from above, with the skid wedge, the close band, the privy zone and the live aim arrow. The caption is "Twist your fist to aim", then "Close — twist a little" / "On the skid — hold it" / "That's the privy!".
+- **Phones:** the same fan and words while sawing (host → pads `{t:'aim', deg, target, grade}` at 5 Hz). It's only a glance cue, since the phone is in your fist.
+- **The fall:**
+  - The camera cuts to behind the tree, looking down the skid, so a fall on target lands straight up the picture.
+  - The landing is called as it hits: "ON THE SKID!" / "Close!" / "Wide of the skid" / "GRANDMA'S PRIVY!".
+  - A privy hit knocks the privy flat.
+
 ## Tests
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing, modes and menus.

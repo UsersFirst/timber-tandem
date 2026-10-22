@@ -897,6 +897,7 @@ export class Game {
     }
 
     const zone = zoneOf(this.saw.e);
+    const aimDeg = fallAngle(this.cut, lean);
     const view = {
       phase: this.phase,
       mode: this.mode,
@@ -911,8 +912,10 @@ export class Game {
       notchSteps: this.notch.steps,
       silentSong: this.params.has('nosong'),
       litFace: this.phase === 'notch' ? this.notch.lit : null,
-      fallPreview: fallAngle(this.cut, lean),
+      fallPreview: aimDeg,
       targetDeg: this.tree.targetDeg,
+      // Where the fall is heading right now: skid / close / wide / privy.
+      aimGrade: landing(aimDeg, this.tree.targetDeg).grade,
       temper: temperOf(this.saw),
       tantrums: this.saw.tantrums,
       streak: this.saw.streak,
@@ -937,6 +940,11 @@ export class Game {
     };
     this.view = view;
     this._syncMenu();
+    // The phones show the aim too (a glance cue), a few times a second.
+    if (this.phase === 'saw' && now - (this.lastAimSent || 0) >= 200) {
+      this.lastAimSent = now;
+      this.room?.toPad(null, { t: 'aim', deg: Math.round(aimDeg * 10) / 10, target: this.tree.targetDeg, grade: view.aimGrade });
+    }
     if (this.guests.size && now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
       const { lobby, ...rest } = view;

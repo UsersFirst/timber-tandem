@@ -106,7 +106,7 @@ export class Presenter {
         a.play('creak');
         setTimeout(() => a.play('timber'), 700);
         setTimeout(() => a.play('thud'), 2900);
-        sc?.fall(ev.angle).then(() => sc?.celebrate());
+        sc?.fall(ev.angle, ev.landing?.grade).then(() => sc?.celebrate());
         break;
       case 'score':
         if (ev.score.landing.grade === 'skid') setTimeout(() => a.play('star'), 400);
@@ -131,6 +131,7 @@ export class Presenter {
       this.scene.update(dt, {
         phase, s: v.s, e: v.e, zone: v.zone, blame: v.blame, lean: v.lean,
         cutFrac: v.cutFrac, notchFrac: v.notchFrac, litFace: v.litFace,
+        aimDeg: v.fallPreview, aimGrade: v.aimGrade,
       });
     }
     if (this.audio.ready) {

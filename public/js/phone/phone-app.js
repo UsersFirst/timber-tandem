@@ -152,8 +152,33 @@ function onHostMessage(m) {
     case 'cue':
       cue(m.kind);
       break;
+    case 'aim':
+      drawAim(m);
+      break;
     default:
   }
+}
+
+/**
+ * The aim while sawing: the same fan as the TV's aim map, from above (up =
+ * away from you, toward the fall). A glance cue: the phone is in your fist.
+ * @param {{deg:number, target:number, grade:string}} m
+ */
+function drawAim(m) {
+  const SPREAD = 2.4, R = 95, MAX = 25;
+  const pt = (deg, r) => { const a = (deg * SPREAD * Math.PI) / 180; return [Math.sin(a) * r, -Math.cos(a) * r]; };
+  const sector = (d0, d1) => { const [x0, y0] = pt(d0, R), [x1, y1] = pt(d1, R); return `M0 0 L${x0.toFixed(1)} ${y0.toFixed(1)} A${R} ${R} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z`; };
+  const $ = (id) => /** @type {SVGElement} */ (/** @type {unknown} */ (document.getElementById(id)));
+  $('aim-fan').setAttribute('d', sector(-MAX, MAX));
+  $('aim-close').setAttribute('d', sector(m.target - 10, m.target + 10));
+  $('aim-skid').setAttribute('d', sector(m.target - 4, m.target + 4));
+  const [x, y] = pt(m.deg, 88);
+  const col = m.grade === 'skid' ? '#7ee08a' : m.grade === 'close' ? '#f2b24c' : m.grade === 'privy' ? '#ff5a4a' : '#fff2c4';
+  const arrow = $('aim-arrow');
+  arrow.setAttribute('x2', x.toFixed(1)); arrow.setAttribute('y2', y.toFixed(1)); arrow.setAttribute('stroke', col);
+  const word = /** @type {HTMLElement} */ (document.getElementById('aim-word'));
+  word.textContent = m.grade === 'skid' ? 'On the skid — hold it' : m.grade === 'close' ? 'Close — twist a little' : m.grade === 'privy' ? 'That’s the privy!' : 'Twist to aim';
+  word.style.color = col;
 }
 
 function sendHello() {
