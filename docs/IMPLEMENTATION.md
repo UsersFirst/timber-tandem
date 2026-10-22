@@ -227,7 +227,7 @@ Log: `~/Downloads/timber-spike-1792590647544.json` (140 s, raw sensors).
 0. **The tantrum's gags** (above) are mine: the curse bubble, the hat flying off, the take to camera, and Grandma's tut. Any of them is easy to drop or change.
 
 1. **Landing:** shown as degrees off the skid, with the words skid / close / wide / privy. There are no stars.
-2. **Grandma holds her handle level.** Solo, you steer at half strength (the blade leans by the average of the two twists, PLAN §4.4).
+2. ✅ **Grandma follows your twist** (Pete, 2026-10-22): solo steers at full strength (`steerLean` in core/tree.js). With two players, the blade still leans by the average of the two twists (PLAN §4.4).
 3. **The notch is seen from the far side, mirrored** (above).
 4. **Calibration** is 5 short steps, with live progress and a visible countdown. PLAN wants it folded into the first strokes on the small pine. That's the next iteration if the steps feel slow.
 5. **The Grandma stand-in** is the Georgian goose. She needs her own model (tandemonium-claude-3d pipeline).

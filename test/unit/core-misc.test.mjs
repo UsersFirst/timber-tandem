@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HatchetDetector, CHOP } from '../../public/js/core/hatchet.js';
 import { createNotch, notchHit, notchFrac } from '../../public/js/core/notch.js';
-import { createCut, cutBite, fallAngle, landing, bladeLean, MAX_FALL_DEG } from '../../public/js/core/tree.js';
+import { createCut, cutBite, fallAngle, landing, bladeLean, steerLean, MAX_FALL_DEG } from '../../public/js/core/tree.js';
 import { ClockSync } from '../../public/js/core/clock-sync.js';
 import { restGravity, pullDirection, strokeAxis, lagToBeat, rollSignFrom, chopPeak, songTempo, pullParity } from '../../public/js/core/calibration.js';
 
@@ -62,6 +62,10 @@ test('notch: alternating turns, out-of-turn chips, soft glances, clang', () => {
 test('steering: average of both twists; opposite twists cancel', () => {
   assert.equal(bladeLean(1, 1), 1);
   assert.equal(bladeLean(1, -1), 0);
+  // Grandma follows her partner's twist: solo steers at full strength.
+  assert.equal(steerLean(0.8, 0, 'B'), 0.8);
+  assert.equal(steerLean(0, -0.6, 'A'), -0.6);
+  assert.equal(steerLean(1, -1, null), 0);
   const cut = createCut(20);
   for (let i = 0; i < 4; i++) cutBite(cut, 0.4);
   assert.ok(Math.abs(fallAngle(cut, 0.4) - 0.4 * MAX_FALL_DEG) < 1e-9);

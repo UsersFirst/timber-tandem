@@ -38,7 +38,7 @@ Pass thresholds come from PLAN §13.1. The ones the log answers directly:
 
 ## Step D: toy
 
-Play two trees with first-time pairs, both couch pairs and one online pair (the second home uses **Join a home**).
+Play two trees with first-time pairs, both couch pairs and one online pair (the second home picks **Online duo → Join with a code**).
 
 **Watch first, then ask three questions:**
 1. What was that like?
@@ -51,6 +51,22 @@ Play two trees with first-time pairs, both couch pairs and one online pair (the 
 - Whether anyone says "again?" without prompting. That's the gate.
 - Spectators laughing.
 - Phones out filming.
+
+### Steering: is the twist and the fall understood?
+
+Say nothing about steering before the first tree. During the back cut, watch whether anyone twists, and when.
+
+**Ask after the first tree:**
+1. Did you know you could choose where the tree falls?
+2. How? (Listen for "twist" without prompting.)
+3. Where was it meant to fall? Did you know before it fell, or only from the score card?
+
+**Note:**
+- Whether they twisted before Grandma's hint (it comes after 8 bites with no twist).
+- Whether anyone looked at the AIM · SKID dial.
+- Whether the landing ("skid / close / wide / privy") surprised them.
+
+**Solo:** Grandma follows your twist (full strength), so one twisting fist should aim the tree as well as a pair does.
 
 ## What to try if it feels wrong
 

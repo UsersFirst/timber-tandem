@@ -43,6 +43,18 @@ export function bladeLean(rollA, rollB) {
   return Math.max(-1, Math.min(1, (rollA + rollB) / 2));
 }
 
+/**
+ * The blade's lean for this pair. Grandma follows her partner's twist (Pete,
+ * 2026-10-22: solo steers at full strength), so a seat she holds copies the
+ * other seat's roll before the two are averaged.
+ * @param {number} rollA @param {number} rollB @param {'A'|'B'|null} [grandma] the seat Grandma holds
+ */
+export function steerLean(rollA, rollB, grandma = null) {
+  if (grandma === 'A') return bladeLean(rollB, rollB);
+  if (grandma === 'B') return bladeLean(rollA, rollA);
+  return bladeLean(rollA, rollB);
+}
+
 /** @param {CutState} cut @param {number} lean */
 export function cutBite(cut, lean) {
   if (cut.bites >= cut.needed) return true;

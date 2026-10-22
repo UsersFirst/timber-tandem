@@ -12,7 +12,7 @@
 import { createSaw, stepSaw, temperOf, zoneOf, targetS, grandmaHandle, SAW } from '../core/saw-model.js';
 import { SeatBuffer, matchedTime, HoldPull } from '../core/input-buffer.js';
 import { createNotch, notchHit, notchFrac } from '../core/notch.js';
-import { TREES, createCut, cutBite, fallAngle, cutFrac, landing, bladeLean } from '../core/tree.js';
+import { TREES, createCut, cutBite, fallAngle, cutFrac, landing, steerLean } from '../core/tree.js';
 import { lagToBeat, songTempo, pullParity } from '../core/calibration.js';
 import { SEATS } from '../core/protocol.js';
 import { menuFor, isMode, seatBChangesHome, remoteMenu, hostOnly } from '../core/modes.js';
@@ -825,9 +825,10 @@ export class Game {
     /** @type {Record<SeatId, {p:number, v:number, roll:number}>} */
     const h = /** @type {any} */ ({});
     for (const s of Object.values(this.seats)) h[s.id] = this._handle(s, tEval, bp, beatMs);
-    // Grandma holds her handle level: the blade leans by the average of the
-    // two twists (PLAN §4.4), so solo you steer at half strength.
-    const lean = bladeLean(h.A.roll, h.B.roll);
+    // The blade leans by the average of the two twists (PLAN §4.4). Grandma
+    // follows her partner's twist, so solo you steer at full strength.
+    const gSeat = this.seats.A.kind === 'grandma' ? 'A' : this.seats.B.kind === 'grandma' ? 'B' : null;
+    const lean = steerLean(h.A.roll, h.B.roll, gSeat);
     this.cut.lean = lean;
 
     // Grandma's and the bots' hatchets.

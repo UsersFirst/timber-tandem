@@ -462,7 +462,7 @@ export class Hud {
               <uf-join-code mode="display" value="${esc(l.code)}" code-prefix="${CODE_PREFIX}" length="5"></uf-join-code>
               <div class="muted waiting">Waiting for them…</div></div>`;
       }
-      else if (s.kind === 'grandma') { status = '👵 Grandma takes this handle'; body = `<div class="muted">She pulls right on the beat and never pushes.${mode === 'solo' && host ? '<br>Twist with her and you steer at half strength.' : ''}</div>`; }
+      else if (s.kind === 'grandma') { status = '👵 Grandma takes this handle'; body = `<div class="muted">She pulls right on the beat and never pushes.${mode === 'solo' && host ? '<br>She follows your twist: turn your fist toward where the tree should fall.' : ''}</div>`; }
       else if (s.kind === 'keys') {
         status = '⌨️ Keyboard';
         body = `<div class="muted">${keysLine(s.id)}</div>`;

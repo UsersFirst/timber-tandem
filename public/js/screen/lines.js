@@ -23,6 +23,7 @@ export const LINES = {
     ['Old Misery', 'Bigger tree. Same rhythm. Don’t rush me.'],
   ],
   steerHint: ['Grandma', 'Twist your fists together to aim for the skid.'],
+  steerHintSolo: ['Grandma', 'Twist your fist toward the skid, dear — I’ll follow you.'],
   push: [['Old Misery', 'Don’t PUSH me! Let ’er go!'], ['Old Misery', 'Now I’m cross… cut!'], ['Grandma', 'Only pull, dear. Never push.']],
   tug: [['Old Misery', 'You’re BOTH pulling! I’m not a wishbone!'], ['Grandma', 'Take turns, dears. One pulls, one lets go.']],
   tugSolo: [['Grandma', 'Let go when I pull, dear. I’ve had fifty years’ practice.'], ['Old Misery', 'She’s pulling, you’re pulling. I’m not a wishbone!']],
