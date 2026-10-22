@@ -29,3 +29,9 @@ Phones need HTTPS for motion sensors, so real-phone play needs a deploy: `npx wr
 | `/dev/scene.html`, `/dev/audio.html` | Scene and audio test benches |
 
 Add `&noscene` to skip the 3D scene (logic only), `&quality=low|medium|high` for the renderer.
+
+## Credits
+
+- **Lowpoly Pine Tree** by [Citron Legacy](https://sketchfab.com/CitronLegacy) — [Sketchfab](https://sketchfab.com/3d-models/lowpoly-pine-tree-75c6b0a9b2fc4493a17a266f0f504fb4), licensed [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/). Used unmodified (`public/assets/landscape/lowpoly_pine_tree.glb`).
+- **qrcode-generator** 1.4.4 by Kazuhiko Arase — MIT (`public/lib/ui/third_party/qrcode-generator.js`).
+- The geese and the `@usersfirst/ui` kit are House Tandem's own, shared with [Tandemonium](https://github.com/petegordon/tandemonium).
