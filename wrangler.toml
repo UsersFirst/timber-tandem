@@ -1,9 +1,16 @@
 # Timber Tandem: static site (public/) + room relay (/relay) in one Worker.
 #   npm run dev      local, http://localhost:8787 (phones need HTTPS: use deploy)
-#   npm run deploy   timber-tandem.<account>.workers.dev
+#   npm run deploy   https://timber.housetandem.com (and timber-tandem.<account>.workers.dev)
 name = "timber-tandem"
 main = "worker/index.js"
 compatibility_date = "2026-10-01"
+
+# Live at timber.housetandem.com (Cloudflare custom domain on the housetandem.com
+# zone, like roulette. and dice.); the workers.dev address keeps working too.
+workers_dev = true
+routes = [
+  { pattern = "timber.housetandem.com", custom_domain = true }
+]
 
 [assets]
 directory = "./public"
@@ -18,3 +25,4 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["TimberRoom"]
+

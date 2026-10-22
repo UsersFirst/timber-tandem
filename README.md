@@ -13,7 +13,7 @@ npm test             # unit tests (saw model, stroke tracker, hatchet, notch, cl
 npm run smoke        # end to end in headless Chrome over the local relay (needs `npm run dev`)
 ```
 
-Phones need HTTPS for motion sensors, so real-phone play needs a deploy: `npx wrangler login` once, then `npm run deploy` (→ `timber-tandem.<account>.workers.dev`). Open it on the TV/laptop, press **Play on this screen**, and scan each handle's QR code.
+Phones need HTTPS for motion sensors, so real-phone play needs a deploy: `npx wrangler login` once, then `npm run deploy` (→ https://timber.housetandem.com). Open it on the TV/laptop, pick a mode from the main menu, and scan each handle's QR code.
 
 ## Ways to play and test
 

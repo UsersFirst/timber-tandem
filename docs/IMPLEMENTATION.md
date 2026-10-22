@@ -19,7 +19,7 @@ Scope: PLAN.md §13 steps **C (phone sensing spike)** and **D (toy)**, built so 
 
 ## Layout
 
-One Cloudflare Worker serves the static site (`public/`) and the relay (`/relay`). `npm run dev` runs it locally (wrangler dev), and `npm run deploy` puts it on workers.dev for real phones. Phones need HTTPS for motion sensors.
+One Cloudflare Worker serves the static site (`public/`) and the relay (`/relay`). `npm run dev` runs it locally (wrangler dev), and `npm run deploy` puts it live at https://timber.housetandem.com (and workers.dev) for real phones. Phones need HTTPS for motion sensors.
 
 ```
 public/index.html          the screen (TV/laptop): host or guest
@@ -239,6 +239,6 @@ Log: `~/Downloads/timber-spike-1792590647544.json` (140 s, raw sensors).
 ### Not done yet (needs real hardware or Pete)
 
 - **Real phones:** the spike and toy runs in `docs/PLAYTEST.md`.
-- **Deploy:** live at https://timber-tandem.pete-872.workers.dev (`npm run deploy`; Claude may run it per `.claude/settings.json`).
+- **Deploy:** live at https://timber.housetandem.com (also https://timber-tandem.pete-872.workers.dev; `npm run deploy`; Claude may run it per `.claude/settings.json`).
 - **A real TV:** frame rate on a TV-class device. The laptop renders at 480–630 fps uncapped.
 - **Voice:** recorded lines for Grandma and Old Misery (captions only for now).

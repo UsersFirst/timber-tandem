@@ -4,7 +4,7 @@ The simulated phones prove the pipeline: sensors, then tracker, calibration, clo
 
 ## Setup (once)
 
-1. The game is live at **https://timber-tandem.pete-872.workers.dev** (`npm run deploy` to update). Phones need HTTPS for motion.
+1. The game is live at **https://timber.housetandem.com** (`npm run deploy` to update). Phones need HTTPS for motion.
 2. Use a laptop on the TV over HDMI. Turn on the TV's **game mode**. Use the TV or laptop speakers, **not Bluetooth**.
 3. Open the site on the laptop and press **Play on this screen**. Each phone scans its handle's QR in **Safari or Chrome**, not an in-app scanner browser.
 4. **Android:** turn **auto-rotate off**. A quick twist otherwise rotates the page, and Chrome stops sending motion while it does (the 2026-10-21 drops). Tapping *Pick up the saw* also tries to lock portrait in full screen.
