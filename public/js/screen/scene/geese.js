@@ -407,7 +407,7 @@ export class Goose {
     rotateInRoot(b.Head, root, 0, 1, 0, R.look.x * 0.65);
     rotateInRoot(b.Head, root, 0, 0, 1, R.tilt.x);
     // Beak: the jaw hinges about the goose's left axis.
-    rotateInRoot(b.Jaw, root, 1, 0, 0, Math.max(0, R.jaw.x) * 0.55);
+    rotateInRoot(b.Jaw, root, 1, 0, 0, Math.max(0, R.jaw.x) * 0.3);
     rotateInRoot(b.Tail, root, 0, 1, 0, R.tail.x);
     // Hat: lifts off the head and spins (it's skinned to HatSocket).
     if (b.HatSocket && b.HatSocket.parent) {
