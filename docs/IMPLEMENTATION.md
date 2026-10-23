@@ -193,7 +193,7 @@ Directed by the scene and driven by the physics, so picture, sound and call-outs
 - **Wiring:** `scene.onEvent` gives the presenter `sound`, `voice`, `slowmo` and `land`. `TimberAudio.setFallVoice` / `setSlowMo` take an optional context time, for offline renders.
 - **Review video with sound:** `node scripts/dev-fall-clip.mjs <name> <deg> <skid|close|wide|privy> [small|big]` (needs `node scripts/serve.mjs 8792` and ffmpeg). It logs every scene event, renders the same timeline offline through the game's audio engine, and muxes the two.
 
-## The sawing stance (2026-10-23, scene/geese.js )
+## The sawing stance (2026-10-23, scene/geese.js `_sawPose`)
 
 The geese used to slide along with the handle on stiff legs. Now, while
 sawing, each goose's root stays put and the body carries the stroke:
@@ -212,9 +212,7 @@ sawing, each goose's root stays put and the body carries the stroke:
   Skirted geese (Victoria, Grandma) stand narrower, and their skirts flare a
   little so the feet stay hidden.
 
-Tantrum reactions still layer on top. C:UserspeteSoftwareDev	imber-tandemscriptsoutsawsawgame.mp4
-C:UserspeteSoftwareDev	imber-tandemscriptsoutsawsawront.mp4
-C:UserspeteSoftwareDev	imber-tandemscriptsoutsawsawsideA.mp4 films a
+Tantrum reactions still layer on top. `scripts/dev-saw-clip.mjs` films a
 stroke from the game camera and two low close-ups.
 
 ## Tests
