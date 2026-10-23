@@ -30,7 +30,7 @@ await p.evaluate((kind) => {
     #lb i:first-child { top: 0; transform-origin: top; } #lb i:last-child { bottom: 0; transform-origin: bottom; }
     html[data-slowmo] #lb { box-shadow: inset 0 0 22vh 2vh rgba(0,0,0,.55); } html[data-slowmo] #lb i { transform: scaleY(1); }
     #toast { position: fixed; left: 50%; top: 30%; transform: translate(-50%,-50%); z-index: 6; font: 400 120px Georgia, serif; color: #fff; text-shadow: 0 6px 24px rgba(0,0,0,.6); opacity: 0; transition: opacity .2s; white-space: nowrap; }
-    #toast.on { opacity: 1; } #toast.small { font-size: 72px; top: 22%; }
+    #toast.on { opacity: 1; } #toast.small { font-size: 96px; top: 26%; -webkit-text-stroke: 3px rgba(20,12,6,.55); paint-order: stroke fill; text-shadow: 0 3px 0 rgba(20,12,6,.55), 0 8px 28px rgba(0,0,0,.65); }
   </style>`);
   document.body.insertAdjacentHTML('beforeend', '<div id="lb"><i></i><i></i></div><div id="toast"></div>');
   // Animations run on page time; manual stepping is faster than real time, so skip CSS transitions.

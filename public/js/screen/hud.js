@@ -107,17 +107,17 @@ export class Hud {
     clearTimeout(this.landTimer);
     this.landTimer = 0;
     const say = { skid: ['ON THE SKID!', '#7ee08a'], close: ['Close!', '#f2b24c'], wide: ['Wide of the skid', '#f6ead8'], privy: ['GRANDMA’S PRIVY!', '#ff5a4a'] }[grade || ''];
-    if (say) this.toast(say[0], 'title', say[1]);
+    if (say) this.toast(say[0], 'result', say[1]);
   }
 
-  /** @param {string} text @param {'bad'|'soft'|'big'|'title'|'turn'|'tantrum'} kind @param {string} [color] */
+  /** @param {string} text @param {'bad'|'soft'|'big'|'title'|'turn'|'tantrum'|'result'} kind @param {string} [color] */
   toast(text, kind, color) {
     const el = $('toast');
     el.textContent = text;
     el.style.color = color || '';
     el.className = 'toast show ' + kind;
     clearTimeout(this.toastTimer);
-    this.toastTimer = /** @type {any} */ (setTimeout(() => { el.className = 'toast ' + kind; }, kind === 'big' ? 2200 : kind === 'title' ? 1800 : 1100));
+    this.toastTimer = /** @type {any} */ (setTimeout(() => { el.className = 'toast ' + kind; }, kind === 'big' || kind === 'result' ? 2400 : kind === 'title' ? 1800 : 1100));
   }
 
   logoTantrum() {

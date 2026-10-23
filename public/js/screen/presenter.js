@@ -12,10 +12,11 @@ import { Hud } from './hud.js';
 
 export class Presenter {
   /**
-   * @param {{canvas: HTMLCanvasElement, role:'host'|'guest', toLocal:(h:number)=>number, onAction:(a:string, arg?:any)=>void, quality?: string, noScene?: boolean}} o
+   * @param {{canvas: HTMLCanvasElement, role:'host'|'guest', toLocal:(h:number)=>number, onAction:(a:string, arg?:any)=>void, quality?: string, noScene?: boolean, onLand?: () => void}} o
    */
   constructor(o) {
     this.toLocal = o.toLocal;
+    this.onLand = o.onLand;
     this.audio = new TimberAudio();
     this.hud = new Hud({ onAction: o.onAction, role: o.role });
     /** @type {any} */
@@ -43,7 +44,7 @@ export class Presenter {
         }
         if (kind === 'voice' && a.ready) a.setFallVoice(d);
         if (kind === 'slowmo') { if (a.ready) a.setSlowMo(d.on); document.documentElement.toggleAttribute('data-slowmo', !!d.on); }
-        if (kind === 'land') this.hud.landed(d.grade);
+        if (kind === 'land') { this.hud.landed(d.grade); this.onLand?.(); }
       });
       await this.scene.setCast(this.cast);
       const resize = () => this.scene?.resize(window.innerWidth, window.innerHeight);

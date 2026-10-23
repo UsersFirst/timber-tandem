@@ -167,7 +167,11 @@
   html[data-slowmo] #letterbox i { transform: scaleY(1); }
   .toast.tantrum { color: var(--red); font-size: clamp(30px, 3.6vw, 56px); top: 11%; letter-spacing: .06em; }
   .toast.soft { color: #f6d28b; font-size: clamp(22px, 2.4vw, 34px); top: 30%; }
-  .toast.big { color: #fff; font-family: var(--serif); font-size: clamp(70px, 11vw, 170px); }
+  /* TIMBER! and the landing call-out share one look: regular Georgia, big. */
+  .toast.big { color: #fff; font-family: var(--serif); font-weight: 400; font-size: clamp(70px, 11vw, 170px); }
+  .toast.result { font-family: var(--serif); font-weight: 400; font-size: clamp(52px, 7.5vw, 116px); top: 26%; white-space: nowrap;
+    -webkit-text-stroke: 3px rgba(20,12,6,.55); paint-order: stroke fill;
+    text-shadow: 0 3px 0 rgba(20,12,6,.55), 0 8px 28px rgba(0,0,0,.65); }
   .toast.title { color: #fff; font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 5vw, 76px); top: 20%; }
   #paused { position: fixed; z-index: 25; left: 50%; top: 18%; transform: translateX(-50%); background: rgba(27,20,16,.9); padding: 14px 22px; border-radius: 16px; font-size: 22px; }
   #intro-skip { position: fixed; z-index: 25; right: 22px; bottom: 22px; }

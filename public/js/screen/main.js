@@ -139,8 +139,10 @@ async function startHost(mode) {
   presenter = new Presenter({
     canvas, role: 'host', toLocal: (h) => h, quality: params.get('quality') || undefined, noScene: params.has('noscene'),
     onAction: (a, arg) => hostAction(g, a, arg),
+    onLand: () => g.landed(),
   });
   const g = new Game({ room, emit: (ev) => presenter?.event(ev), params });
+  presenter.sceneReady.then((ok) => { g.sceneLands = !!ok; });
   game = g;
   /** @type {any} */ (window).__game = g;
   await presenter.unlockAudio();

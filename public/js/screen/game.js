@@ -104,6 +104,10 @@ export class Game {
     addEventListener('pagehide', () => this.log.flush(this._logHeader()));
     /** A player paused the game (menu); `paused` is a dropped phone. */
     this.held = false;
+    /** The host's 3D scene reports the landing (score waits for it). */
+    this.sceneLands = false;
+    /** @type {null | (() => void)} */
+    this._onLanded = null;
     this.view = /** @type {any} */ ({});
     this._applyDevParams();
   }
@@ -599,7 +603,7 @@ export class Game {
     const land = landing(angle, this.tree.targetDeg);
     this.emit({ k: 'fall', angle, landing: land });
     this.room?.toPad(null, { t: 'cue', kind: 'timber' });
-    this.say('timber', 2500);
+    // (No TIMBER caption: the big TIMBER! on screen says it.)
     if (this.song) { this.emit({ k: 'song-stop' }); this.song = null; }
     const score = {
       tree: this.tree.name,
@@ -614,13 +618,29 @@ export class Game {
       notchChips: this.notch.chips,
     };
     this.scores.push(score);
-    this._later(5200, () => {
+    // The score card waits for the tree to land (the host's scene reports it,
+    // landed()) and the call-out to be read; without a scene, on a timer.
+    // Capped, so a stalled scene can never hold the game.
+    const epoch = this.epoch;
+    let shown = false;
+    const showScore = () => {
+      if (shown || this.epoch !== epoch) return;
+      shown = true;
       this._setPhase('score');
       this.emit({ k: 'score', score, last: this.treeIdx >= TREES.length - 1 });
       const key = land.grade === 'privy' ? 'landPrivy' : land.grade === 'skid' ? 'landSkid' : land.grade === 'close' ? 'landClose' : 'landWide';
       this.say(key, 3500);
       this._later(3600, () => this.say(score.temper >= 85 ? 'scoreHigh' : score.temper >= 60 ? 'scoreMid' : 'scoreLow', 4000));
-    });
+    };
+    this._onLanded = () => setTimeout(showScore, 2600);
+    setTimeout(showScore, this.sceneLands ? 12000 : 7000);
+  }
+
+  /** The host's scene saw the tree hit the ground. */
+  landed() {
+    const f = this._onLanded;
+    this._onLanded = null;
+    if (f && this.phase === 'fall') f();
   }
 
   /** From the score card: the next tree; after the last one, the summary. */
