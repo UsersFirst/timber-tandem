@@ -193,6 +193,28 @@ Directed by the scene and driven by the physics, so picture, sound and call-outs
 - **Wiring:** `scene.onEvent` gives the presenter `sound`, `voice`, `slowmo` and `land`. `TimberAudio.setFallVoice` / `setSlowMo` take an optional context time, for offline renders.
 - **Review video with sound:** `node scripts/dev-fall-clip.mjs <name> <deg> <skid|close|wide|privy> [small|big]` (needs `node scripts/serve.mjs 8792` and ffmpeg). It logs every scene event, renders the same timeline offline through the game's audio engine, and muxes the two.
 
+## The sawing stance (2026-10-23, scene/geese.js `_sawPose`)
+
+The geese used to slide along with the handle on stiff legs. Now, while
+sawing, each goose's root stays put and the body carries the stroke:
+
+- **Feet planted**, wide and staggered (the camera-side foot back), held by
+  two-bone leg IK, knees bent and pointing forward.
+- **Hips** rock fore and aft with the saw (half the handle's travel, leading it
+  slightly), sit lower at the ends of the stroke, and turn open toward the
+  camera on the pull. The back heel lifts as the weight goes forward.
+- **Spine** bends over the work, leans back into the pull and forward on the
+  return; a tug hauls them back and a push hunches them (with a tremble at
+  high strain).
+- **Head lock**: the neck takes up the lean and the head is held level, like a
+  real goose.
+- **Cloth**: coat tails and skirts swing after the hips, and the tail wags.
+  Skirted geese (Victoria, Grandma) stand narrower, and their skirts flare a
+  little so the feet stay hidden.
+
+Tantrum reactions still layer on top. `scripts/dev-saw-clip.mjs` films a
+stroke from the game camera and two low close-ups.
+
 ## Tests
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing, modes and menus.
