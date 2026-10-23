@@ -200,7 +200,9 @@ export async function createScene(canvas, opts = {}) {
     const hx0 = sg * (BLADE_L / 2 + 0.03);
     const hx = hx0 - v.s * TRAVEL;
     const back = v.phase === 'fall' || v.phase === 'done' ? 0.55 : 0;
-    const x = hx0 + sg * STANDOFF + BODY_FOLLOW * (hx - hx0) + sg * back;
+    // Sawing, the feet stay put: the hips carry the stroke (Goose.saw.shift).
+    const follow = v.phase === 'saw' || v.phase === 'idle' ? 0 : BODY_FOLLOW;
+    const x = hx0 + sg * STANDOFF + follow * (hx - hx0) + sg * back;
     return { pos: new THREE.Vector3(x, 0, handleZ + (back ? 0.5 : 0)), yaw: seat === 'A' ? Math.PI / 2 : -Math.PI / 2 };
   }
 
@@ -382,10 +384,11 @@ export async function createScene(canvas, opts = {}) {
       else if (walking) g.play('walk', { fade: 0.2 });
       else g.play('idle_shift', { fade: 0.35 });
 
-      // Body language: lean back on your pull.
+      // Body language: the stance follows the stroke (+pull = the handle
+      // coming to you, the hips going back).
       const pull = seat === 'A' ? view.s : -view.s;
-      g.sway = view.phase === 'saw' ? pull * 0.9 : 0;
-      g.bob = view.phase === 'saw' ? Math.sin(time * 6) * 0.3 : 0;
+      g.sway = 0;
+      g.bob = 0;
 
       // Arms.
       /** @type {{left?: THREE.Vector3|null, right?: THREE.Vector3|null}} */
@@ -412,11 +415,19 @@ export async function createScene(canvas, opts = {}) {
           hands[camSide] = /** @type {THREE.Vector3} */ (hands[camSide]).clone().lerp(wing, THREE.MathUtils.clamp(w, 0, 1));
         }
         g.ikWeight = THREE.MathUtils.damp(g.ikWeight, 1, 10, dtReal);
+        const sawing = view.phase === 'saw' || view.phase === 'idle';
+        g.saw.w = THREE.MathUtils.damp(g.saw.w, sawing ? 1 : 0, 8, dtReal);
+        g.saw.shift = -pull * 0.5 * TRAVEL;
+        g.saw.effort = THREE.MathUtils.damp(g.saw.effort, Math.min(1, Math.abs(view.e) * 1.2), 6, dtReal);
+        g.saw.tug = view.e >= 0 ? 1 : -1;
+        g.saw.open = seat === 'A' ? -1 : 1;
       } else if (view.phase === 'notch' && !walking) {
+        g.saw.w = THREE.MathUtils.damp(g.saw.w, 0, 10, dtReal);
         const hand = chopPose(seat, dt);
         hands = { right: hand };
         g.ikWeight = THREE.MathUtils.damp(g.ikWeight, 1, 12, dtReal);
       } else {
+        g.saw.w = THREE.MathUtils.damp(g.saw.w, 0, 10, dtReal);
         g.ikWeight = THREE.MathUtils.damp(g.ikWeight, 0, 8, dtReal);
         hands = g.ikWeight > 0.02 ? { left: g.bones.LeftHand.getWorldPosition(new THREE.Vector3()), right: g.bones.RightHand.getWorldPosition(new THREE.Vector3()) } : {};
       }
@@ -569,7 +580,11 @@ export async function createScene(canvas, opts = {}) {
     },
     get info() { return { drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }; },
     /** Internals for dev tools and smokes (not part of the game API). */
-    get _debug() { return { scene, camera, renderer, geese, saw, tree, fx, tfx }; },
+    get _debug() {
+      /** Park the camera (dev captures). @param {number[]} pos @param {number[]} at @param {number} fov */
+      const lockCam = (pos, at, fov) => { camGoal.pos.set(pos[0], pos[1], pos[2]); camGoal.at.set(at[0], at[1], at[2]); camGoal.fov = fov; cam.pos.copy(camGoal.pos); cam.at.copy(camGoal.at); cam.fov = fov; };
+      return { scene, camera, renderer, geese, saw, tree, fx, tfx, lockCam };
+    },
     dispose() {
       renderer.dispose();
       scene.traverse((o) => { const m = /** @type {any} */ (o); if (m.geometry) m.geometry.dispose(); });

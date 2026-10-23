@@ -295,6 +295,45 @@ export class Goose {
     this._modelScale = this.model.scale.clone();
     this._modelY = this.model.position.y;
 
+    // The sawing stance (see _sawPose): two-bone IK on the legs, and the
+    // rest-pose ankles in the root's frame, which the planted feet start from.
+    this.legL = b.LeftUpLeg && b.LeftLeg && b.LeftFoot ? new ArmIK(b.LeftUpLeg, b.LeftLeg, b.LeftFoot) : null;
+    this.legR = b.RightUpLeg && b.RightLeg && b.RightFoot ? new ArmIK(b.RightUpLeg, b.RightLeg, b.RightFoot) : null;
+    this.root.updateMatrixWorld(true);
+    const ank = (n) => this.root.worldToLocal(b[n].getWorldPosition(new THREE.Vector3()));
+    this._ankle = { L: ank('LeftFoot'), R: ank('RightFoot') };
+    this._footLen = b.LeftToeBase ? b.LeftFoot.getWorldPosition(new THREE.Vector3()).distanceTo(b.LeftToeBase.getWorldPosition(new THREE.Vector3())) : 0.12;
+    /** @type {[THREE.Bone, number][]} cloth panels (coat tails, skirts) and how much each swings */
+    this._cloth = [];
+    this.model.traverse((o) => {
+      const m = /^Cloth_.*_([0-9])$/.exec(o.name);
+      if (m && /** @type {any} */ (o).isBone) this._cloth.push([/** @type {THREE.Bone} */ (o), m[1] === '1' ? 1 : m[1] === '2' ? 0.3 : 0.15]);
+    });
+    // A long skirt can't hide a wide lunge: those geese stand narrower, and
+    // the skirt flares out over the feet (each panel swings out from the hips).
+    this._skirt = this._cloth.some(([bn]) => /skirt|petticoat/.test(bn.name));
+    /** @type {Map<THREE.Bone, THREE.Vector3>} panel → its flare axis, root frame */
+    this._flare = new Map();
+    if (this._skirt && b.Hips) {
+      const hipP = this.root.worldToLocal(b.Hips.getWorldPosition(new THREE.Vector3()));
+      for (const [bn] of this._cloth) {
+        const d = this.root.worldToLocal(bn.getWorldPosition(new THREE.Vector3())).sub(hipP);
+        d.y = 0;
+        if (d.lengthSq() < 1e-6) continue;
+        d.normalize();
+        // Rotating about up × out swings the hem outward.
+        this._flare.set(bn, new THREE.Vector3(0, 1, 0).cross(d).normalize());
+      }
+    }
+    /**
+     * Sawing, set by the scene every frame. w: blend 0..1. shift: the hips'
+     * travel toward the work (m, + forward). effort 0..1 and tug (+1 both
+     * hauling back, −1 a push buckling the blade). open: which side the
+     * camera is on (+1 its left, −1 its right): it stands open to it.
+     */
+    this.saw = { w: 0, shift: 0, effort: 0, tug: 0, open: 1 };
+    this._sawSt = { vel: 0, last: 0, yaw: 0, t: Math.random() * 10, cloth: new Spring(1.9, 0.22), wag: new Spring(2.6, 0.3) };
+
     if (id === 'grandma') this._dressGrandma();
   }
 
@@ -363,11 +402,127 @@ export class Goose {
     const nk = this.bones.Neck;
     if (nk) nk.rotation.x += this.bob * 0.05;
     this._applyReactions(dt);
+    this._sawPose(dt);
     this.root.updateMatrixWorld(true);
     const w = this.ikWeight;
     if (w <= 0.001) return;
     if (hands.left && this.armL) this.armL.solve(hands.left, hands.poleL || this.defaultPole(1), w);
     if (hands.right && this.armR) this.armR.solve(hands.right, hands.poleR || this.defaultPole(-1), w);
+  }
+
+  /**
+   * The sawyer's stance, layered on the clip: feet planted wide and
+   * staggered (the camera-side foot back), knees bent, hips rocking fore and
+   * aft with the stroke and turning open on the pull, the spine leaning into
+   * it, the head held level (a goose keeps its head still), and the coat
+   * tails or skirts and the tail swinging after the hips.
+   * @param {number} dt
+   */
+  _sawPose(dt) {
+    const S = this.saw, st = this._sawSt, b = this.bones, root = this.root;
+    const w = S.w;
+    // Keep the swing springs moving even while blending out.
+    const vel = dt > 0 ? (S.shift - st.last) / dt : 0;
+    st.last = S.shift;
+    st.vel += (vel - st.vel) * Math.min(1, dt * 12);
+    st.t += dt;
+    if (w < 0.001 || !b.Hips) return;
+    root.updateMatrixWorld(true);
+    const rq = root.getWorldQuaternion(new THREE.Quaternion());
+    const rqi = rq.clone().invert();
+    // What the clip (and any tantrum) wanted for the head and feet, in the
+    // root's frame, before the body moves under them.
+    const headRel = b.Head ? rqi.clone().multiply(b.Head.getWorldQuaternion(new THREE.Quaternion())) : null;
+    const footRel = {
+      L: rqi.clone().multiply(b.LeftFoot.getWorldQuaternion(new THREE.Quaternion())),
+      R: rqi.clone().multiply(b.RightFoot.getWorldQuaternion(new THREE.Quaternion())),
+    };
+    // The hips lead the hands a little (the weight goes first).
+    const sh = S.shift + st.vel * 0.05; // ±≈0.13 m
+    const u = THREE.MathUtils.clamp(sh / 0.13, -1.3, 1.3);
+    const eff = S.effort;
+    // Hips: forward and back with the stroke, sitting down into the knees,
+    // lowest at the ends of the stroke (weight on one leg), a strain tremble.
+    const tremble = eff > 0.5 ? Math.sin(st.t * 47) * 0.004 * (eff - 0.5) * 2 : 0;
+    const drop = 0.06 + 0.018 * u * u + 0.035 * eff + tremble;
+    const off = new THREE.Vector3(0.012 * S.open * u, -drop, sh).multiplyScalar(w).applyQuaternion(rq);
+    const hp = b.Hips.getWorldPosition(new THREE.Vector3()).add(off);
+    if (b.Hips.parent) b.Hips.position.copy(b.Hips.parent.worldToLocal(hp));
+    b.Hips.updateMatrixWorld(true);
+    // Hips turn open toward the camera, more on the pull (hips back).
+    const yaw = S.open * (0.16 - 0.14 * u);
+    st.yaw = yaw;
+    rotateInRoot(b.Hips, root, 0, 1, 0, yaw * w);
+    // Spine: bent over the work, leaning back into the pull, forward on the
+    // return; a tug hauls them back, a push hunches them over.
+    const lean = 0.14 + 0.22 * u + 0.12 * eff * (S.tug < 0 ? 1 : -1.2);
+    rotateInRoot(b.Spine, root, 1, 0, 0, lean * 0.35 * w);
+    rotateInRoot(b.Spine1, root, 1, 0, 0, lean * 0.35 * w);
+    rotateInRoot(b.Spine2, root, 1, 0, 0, lean * 0.3 * w);
+    // The shoulders square back up a little toward the saw.
+    rotateInRoot(b.Spine2, root, 0, 1, 0, -yaw * 0.45 * w);
+    // The neck takes up the lean, so the head stays nearly put in space
+    // (a goose's head lock), and is held level whatever the body does.
+    const nk = -(0.22 * u + lean * 0.5) * w;
+    rotateInRoot(b.Neck, root, 1, 0, 0, nk * 0.3);
+    rotateInRoot(b.Neck1, root, 1, 0, 0, nk * 0.35);
+    rotateInRoot(b.Neck2, root, 1, 0, 0, nk * 0.35);
+    // The pulling shoulder draws back on the pull.
+    const shN = S.open > 0 ? 'LeftShoulder' : 'RightShoulder';
+    rotateInRoot(b[shN], root, 0, 1, 0, S.open * -0.12 * u * w);
+    if (b.Head && headRel) {
+      const want = rq.clone().multiply(headRel);
+      const now = b.Head.getWorldQuaternion(new THREE.Quaternion());
+      now.slerp(want, 0.8 * w);
+      const pq = (b.Head.parent || root).getWorldQuaternion(new THREE.Quaternion()).invert();
+      b.Head.quaternion.copy(pq.multiply(now));
+      b.Head.updateMatrixWorld(true);
+    }
+    // Feet: planted, wide and staggered. The camera-side foot is the back one.
+    const backSide = S.open > 0 ? 'L' : 'R';
+    for (const side of /** @type {const} */ (['L', 'R'])) {
+      const leg = side === 'L' ? this.legL : this.legR;
+      const foot = side === 'L' ? b.LeftFoot : b.RightFoot;
+      const hip = side === 'L' ? b.LeftUpLeg : b.RightUpLeg;
+      if (!leg || !foot || !hip) continue;
+      const out = side === 'L' ? 1 : -1;
+      const isBack = side === backSide;
+      const a0 = this._ankle[side];
+      // Heel up on the back foot as the weight goes forward; the front toe
+      // lifts a touch as they sit back.
+      const k = this._skirt ? 0.5 : 1;
+      const heel = (isBack ? Math.max(0, u) * 0.38 : -Math.max(0, -u) * 0.12) * (this._skirt ? 0.6 : 1);
+      const toeOut = out * (isBack ? 0.42 : 0.12) * (this._skirt ? 0.6 : 1);
+      const tgt = new THREE.Vector3(a0.x + out * (isBack ? 0.07 : 0.045) * k, a0.y, a0.z + (isBack ? -0.17 : 0.11) * k);
+      if (heel > 0) tgt.y += this._footLen * Math.sin(heel) * 0.85;
+      const T = root.localToWorld(tgt);
+      // Knees forward and a little out.
+      const hipW = hip.getWorldPosition(new THREE.Vector3());
+      const pole = hipW.add(new THREE.Vector3(out * 0.07, -0.25, 0.6).applyQuaternion(rq));
+      // Blend: from the clip's foot to the planted one.
+      const cur = foot.getWorldPosition(new THREE.Vector3());
+      leg.solve(cur.lerp(T, w), pole, 1);
+      // The foot flat on the ground (plus toe-out and the heel lift).
+      const fq = rq.clone()
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), toeOut))
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), heel))
+        .multiply(footRel[side]);
+      const nowF = foot.getWorldQuaternion(new THREE.Quaternion()).slerp(fq, w);
+      const pq = (foot.parent || root).getWorldQuaternion(new THREE.Quaternion()).invert();
+      foot.quaternion.copy(pq.multiply(nowF));
+      foot.updateMatrixWorld(true);
+    }
+    // Coat tails and skirts swing after the hips; the tail wags against them.
+    st.cloth.target = THREE.MathUtils.clamp(st.vel * 0.35, -0.1, 0.1);
+    st.cloth.step(dt);
+    for (const [bone, k] of this._cloth) {
+      rotateInRoot(bone, root, 1, 0, 0, st.cloth.x * k * w);
+      const ax = this._flare.get(bone);
+      if (ax && k === 1) rotateInRoot(bone, root, ax.x, ax.y, ax.z, -(0.1 + 0.03 * Math.abs(u)) * w);
+    }
+    st.wag.target = -yaw * 1.6;
+    st.wag.step(dt);
+    rotateInRoot(b.Tail, root, 0, 1, 0, st.wag.x * w);
   }
 
   /** Knock the hat up off the head; it falls back under gravity and bounces once. @param {number} v m/s */
