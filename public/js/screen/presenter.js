@@ -33,6 +33,18 @@ export class Presenter {
     try {
       const mod = await import('./scene.js');
       this.scene = await mod.createScene(canvas, { quality: /** @type {any} */ (quality || 'high') });
+      // The fall is directed by the scene: its sounds, voice, slow motion and
+      // landing come from the physics, so they line up with the picture.
+      this.scene.onEvent((/** @type {string} */ kind, /** @type {any} */ d) => {
+        const a = this.audio;
+        if (kind === 'sound' && a.ready) {
+          const go = () => a.play(d.name, { gain: d.gain ?? 1 });
+          if (d.delay) setTimeout(go, d.delay * 1000); else go();
+        }
+        if (kind === 'voice' && a.ready) a.setFallVoice(d);
+        if (kind === 'slowmo') { if (a.ready) a.setSlowMo(d.on); document.documentElement.toggleAttribute('data-slowmo', !!d.on); }
+        if (kind === 'land') this.hud.landed(d.grade);
+      });
       await this.scene.setCast(this.cast);
       const resize = () => this.scene?.resize(window.innerWidth, window.innerHeight);
       window.addEventListener('resize', resize);
@@ -103,10 +115,13 @@ export class Presenter {
         break;
       case 'notch-done': a.play('notch-done'); break;
       case 'fall':
-        a.play('creak');
-        setTimeout(() => a.play('timber'), 700);
-        setTimeout(() => a.play('thud'), 2900);
-        sc?.fall(ev.angle, ev.landing?.grade).then(() => sc?.celebrate());
+        if (sc) sc.fall(ev.angle, ev.landing?.grade).then(() => sc?.celebrate());
+        else {
+          // No 3D scene: the old timed sounds.
+          a.play('crack');
+          setTimeout(() => a.play('timber'), 700);
+          setTimeout(() => a.play('boom'), 3000);
+        }
         break;
       case 'score':
         if (ev.score.landing.grade === 'skid') setTimeout(() => a.play('star'), 400);

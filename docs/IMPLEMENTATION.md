@@ -178,6 +178,21 @@ So players know they can steer, where to aim, and how it went:
   - The landing is called as it hits: "ON THE SKID!" / "Close!" / "Wide of the skid" / "GRANDMA'S PRIVY!".
   - A privy hit knocks the privy flat.
 
+## The fall (2026-10-22)
+
+Directed by the scene and driven by the physics, so picture, sound and call-outs line up for both trees and any angle:
+
+| Beat | Picture | Sound |
+|---|---|---|
+| **Crack** (0–0.5 s) | Close on the trunk; a shake and a punch-in as the hinge goes. | `crack`: a snap and splinters. The fall voice's creak starts as the tree starts to tip. |
+| **Slow motion** (tipped ~20° → ~76°, at 0.4×) | Cut to three-quarters behind, off the skid line, with a slow push in. Letterbox bars and a vignette. Needles shed from the crown. TIMBER! | All sound effects are muffled (the world low-pass) and the song ducks. The rush drops low and swells, with a sub "whoom" under it. |
+| **Impact** (full speed) | A big shake, dust along the trunk, a dust ring, and needles thrown up that drift down. The landing is called on the hit. | `boom`: a sub thump, a crunch, branches, an echo. A quieter `thud` on the bounce. |
+| **Privy** (privy falls only) | The crown meets the roof mid-fall, and time holds at 0.3× for 0.9 s. Every piece flies: planks, the roof, and the door (spinning back toward the camera, moon and all). The toilet roll goes high and bounces. | `smash`, then `whistle` (a slide whistle down) and `clatter` as the planks land. Grandma's `tut` follows. |
+
+- **The cut:** the cut's dark slot is narrower than the trunk and dark wood, not black. It's gone once the tree falls.
+- **Wiring:** `scene.onEvent` gives the presenter `sound`, `voice`, `slowmo` and `land`. `TimberAudio.setFallVoice` / `setSlowMo` take an optional context time, for offline renders.
+- **Review video with sound:** `node scripts/dev-fall-clip.mjs <name> <deg> <skid|close|wide|privy> [small|big]` (needs `node scripts/serve.mjs 8792` and ffmpeg). It logs every scene event, renders the same timeline offline through the game's audio engine, and muxes the two.
+
 ## Tests
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing, modes and menus.

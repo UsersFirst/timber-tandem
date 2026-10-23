@@ -59,6 +59,9 @@ export class FellingTree {
     this.privyHit = false;
     /** @type {THREE.Group|null} */
     this.privy = null;
+    /** Flying privy pieces. @type {{obj: THREE.Object3D, v: THREE.Vector3, axis: THREE.Vector3, spin: number, half: number, bounce: number, still: boolean, landed?: boolean}[]} */
+    this.debris = [];
+    this.smashed = false;
     this.fallDeg = 0;
     this.phi = 0;        // fall angle (rad): 0 standing, ~π/2 down
     this.omega = 0;
@@ -134,9 +137,11 @@ export class FellingTree {
     this.group.add(this.notch);
 
     // Kerf: a dark slot entering from the +z face.
-    const kerfGeo = new THREE.BoxGeometry(R * 2.05, 0.02, 1);
+    // Narrower than the trunk (the 9-gon's flats sit at R·cos 20°), so no
+    // corner pokes out past the bark; dark wood, not black.
+    const kerfGeo = new THREE.BoxGeometry(R * 1.7, 0.016, 1);
     kerfGeo.translate(0, 0, -0.5);
-    this.kerf = new THREE.Mesh(kerfGeo, new THREE.MeshBasicMaterial({ color: 0x1b120b }));
+    this.kerf = new THREE.Mesh(kerfGeo, new THREE.MeshBasicMaterial({ color: 0x3a2414 }));
     this.kerf.position.set(0, CUT_Y, R + 0.004);
     this.kerf.scale.set(1, 1, 0.001);
     this.group.add(this.kerf);
@@ -177,12 +182,14 @@ export class FellingTree {
 
     // The privy: Grandma's outhouse, out where a bad fall lands (PLAN §8).
     if (this.privy) this.scene.remove(this.privy);
+    for (const db of this.debris) this.scene.remove(db.obj);
+    this.debris = [];
+    this.smashed = false;
     this.privy = makePrivy();
-    const pTh = THREE.MathUtils.degToRad(PRIVY_DEG + 5), pD = d.height * 0.86;
+    // Out under the crown's path (a privy fall lands its upper branches on it).
+    const pTh = THREE.MathUtils.degToRad(PRIVY_DEG + 4), pD = d.height * 0.62;
     this.privy.position.set(Math.sin(pTh) * pD, 0, -Math.cos(pTh) * pD);
     this.privy.rotation.y = -pTh; // door toward the tree
-    this.privy.userData.tip = 0;
-    this.privy.userData.tipping = false;
     this.scene.add(this.privy);
 
     // Ghost fall arrow (predicted direction), shown while sawing. Long and
@@ -202,6 +209,7 @@ export class FellingTree {
     this.scene.add(this.ghost);
 
     this.phi = 0; this.omega = 0; this.falling = false; this.landed = false;
+    this.kerf.visible = true;
     this.pivot.quaternion.identity();
     this.setNotch(0); this.setCut(0);
   }
@@ -237,16 +245,67 @@ export class FellingTree {
   /** The privy's base (world). */
   privyPos() { return this.privy.position.clone(); }
 
-  /** A fall on the privy knocks it flat (it tips away from the tree). */
-  knockPrivy() { this.privy.userData.tipping = true; }
+  /**
+   * True once the falling crown has come down onto the privy's roof: the
+   * trunk's height above the privy (it pivots at the hinge) is under the roof
+   * plus the crown's radius there.
+   */
+  privyContact() {
+    if (!this.privy || this.smashed || this.phi < 0.2) return false;
+    const pv = this.pivot.getWorldPosition(new THREE.Vector3());
+    const p = this.privy.position;
+    const D = Math.hypot(p.x - pv.x, p.z - pv.z);
+    const h = CUT_Y + D / Math.tan(this.phi);
+    return h < 2.2 + this.def.height * 0.11;
+  }
 
-  /** @param {number} dt */
+  /**
+   * Smash the privy: every piece flies (away along the fall, up and out),
+   * the door spins back toward the camera, the toilet roll goes high.
+   * @returns {THREE.Vector3} the privy's centre (for dust)
+   */
+  smashPrivy() {
+    this.smashed = true;
+    const pr = /** @type {THREE.Group} */ (this.privy);
+    const c = pr.position.clone().add(new THREE.Vector3(0, 1, 0));
+    const dir = this.fallDir ? this.fallDir.clone() : new THREE.Vector3(0, 0, -1);
+    pr.updateMatrixWorld(true);
+    for (const piece of [...pr.children]) {
+      this.scene.attach(piece);
+      const kind = piece.userData.kind;
+      const out = piece.position.clone().sub(c).setY(0).normalize();
+      const v = dir.clone().multiplyScalar(2.2).addScaledVector(out, 2.4).add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 3 + Math.random() * 2.5, (Math.random() - 0.5) * 1.5));
+      let spin = 6 + Math.random() * 8, bounce = 0.3;
+      if (kind === 'door') { v.copy(dir).multiplyScalar(-2.6).add(new THREE.Vector3(1.2, 5.5, 0)); spin = 9; }
+      if (kind === 'roof') { v.multiplyScalar(0.7).y += 2.5; spin = 4; }
+      if (kind === 'roll') { v.copy(dir).multiplyScalar(-1.5).add(new THREE.Vector3(2.4, 8.5, 0.8)); spin = 14; bounce = 0.55; }
+      if (kind === 'seat') { v.multiplyScalar(0.35); v.y = 1.5; spin = 2; }
+      const axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      this.debris.push({ obj: piece, v, axis, spin, half: piece.userData.half || 0.05, bounce, still: false, landed: false });
+    }
+    return c;
+  }
+
+  /** Debris flight: gravity, a little drag, ground bounces, then rest. @param {number} dt */
   updateProps(dt) {
-    const u = this.privy?.userData;
-    if (!u || !u.tipping || u.tip >= 1) return;
-    u.tip = Math.min(1, u.tip + dt * 2.2);
-    const k = u.tip * u.tip; // falls faster as it goes
-    this.privy.children[0].rotation.x = -k * (Math.PI / 2 - 0.08);
+    for (const d of this.debris) {
+      if (d.still) continue;
+      d.v.y -= 9.8 * dt;
+      d.obj.position.addScaledVector(d.v, dt);
+      d.obj.rotateOnWorldAxis(d.axis, d.spin * dt);
+      if (d.obj.position.y < d.half) {
+        d.obj.position.y = d.half;
+        if (Math.abs(d.v.y) > 1.2) { d.v.y = -d.v.y * d.bounce; d.v.x *= 0.55; d.v.z *= 0.55; d.spin *= 0.5; d.landed = true; }
+        else { d.v.set(0, 0, 0); d.still = true; }
+      }
+    }
+  }
+
+  /** Pieces that hit the ground this frame since the last call (for clatter). */
+  takeLandings() {
+    let n = 0;
+    for (const d of this.debris) if (d.landed) { n++; d.landed = false; }
+    return n;
   }
 
   /** Glow the notch face on a player's turn, in their seat colour. @param {number|null} color @param {number} pulse 0..1 */
@@ -259,6 +318,8 @@ export class FellingTree {
   startFall(angleDeg) {
     this.fallDeg = angleDeg;
     this.falling = true;
+    // The cut is through: no dark slot left on the stump.
+    this.kerf.visible = false;
     // A firm first push off the hinge, so the fall reads at once (~3 s to impact with slow-mo).
     this.phi = 0.04;
     this.omega = 0.2;
@@ -309,38 +370,49 @@ export class FellingTree {
 const _col = new THREE.Color();
 
 /**
- * Grandma's privy: a little plank outhouse with a crescent moon on the door.
- * The model sits inside a hinge group at its back edge, so it can tip over.
- * Faces −z (the door toward the tree once placed).
+ * Grandma's privy: a plank outhouse with a crescent moon on the door, built
+ * from separate pieces so a tree can smash it apart (walls in panels, frame,
+ * door, roof, the seat, and a toilet roll). The door faces +z (the group is
+ * turned to face the tree). Each piece knows its kind and half-height.
  */
 function makePrivy() {
   const g = new THREE.Group();
   g.name = 'privy';
-  const hinge = new THREE.Group();
-  hinge.position.set(0, 0, -0.55); // back edge: it tips away from the tree
-  g.add(hinge);
-  const body = new THREE.Group();
-  body.position.set(0, 0, 0.55);
-  hinge.add(body);
   const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a33, roughness: 0.9, flatShading: true });
+  const wood2 = new THREE.MeshStandardMaterial({ color: 0x7a4e2c, roughness: 0.9, flatShading: true });
   const dark = new THREE.MeshStandardMaterial({ color: 0x4a2f1c, roughness: 0.9, flatShading: true });
-  const box = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.0, 1.0), wood);
-  box.position.y = 1.0;
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.12, 1.3), dark);
-  roof.position.set(0, 2.08, 0); roof.rotation.x = 0.18;
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.6, 0.04), dark);
-  door.position.set(0, 0.86, 0.51);
-  // The crescent: a bright disc with a darker disc over one side.
-  const moonMat = new THREE.MeshBasicMaterial({ color: 0xffe08a });
-  const moon = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), moonMat);
-  moon.position.set(0, 1.42, 0.535);
+  /** @param {THREE.BufferGeometry} geo @param {THREE.Material} mat @param {number[]} p @param {string} kind @param {number} [rx] */
+  const add = (geo, mat, p, kind, rx = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(p[0], p[1], p[2]);
+    m.rotation.x = rx;
+    m.castShadow = true; m.receiveShadow = true;
+    geo.computeBoundingBox();
+    const bb = /** @type {THREE.Box3} */ (geo.boundingBox);
+    m.userData = { kind, half: Math.min(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) / 2 };
+    g.add(m);
+    return m;
+  };
+  const panelX = new THREE.BoxGeometry(0.5, 2.0, 0.05), panelZ = new THREE.BoxGeometry(0.05, 2.0, 0.5);
+  add(panelX, wood, [-0.25, 1.0, -0.48], 'plank'); add(panelX, wood2, [0.25, 1.0, -0.48], 'plank');
+  add(panelZ, wood2, [-0.48, 1.0, -0.25], 'plank'); add(panelZ, wood, [-0.48, 1.0, 0.25], 'plank');
+  add(panelZ, wood, [0.48, 1.0, -0.25], 'plank'); add(panelZ, wood2, [0.48, 1.0, 0.25], 'plank');
+  const strip = new THREE.BoxGeometry(0.19, 2.0, 0.05);
+  add(strip, wood, [-0.405, 1.0, 0.48], 'plank'); add(strip, wood, [0.405, 1.0, 0.48], 'plank');
+  add(new THREE.BoxGeometry(0.62, 0.4, 0.05), wood2, [0, 1.8, 0.48], 'plank');
+  add(new THREE.BoxGeometry(1.25, 0.12, 1.3), dark, [0, 2.08, 0], 'roof', 0.18);
+  const door = add(new THREE.BoxGeometry(0.62, 1.6, 0.04), dark, [0, 0.82, 0.51], 'door');
+  // The crescent: a bright disc with a darker disc over one side (on the door).
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), new THREE.MeshBasicMaterial({ color: 0xffe08a }));
+  moon.position.set(0, 0.6, 0.022);
   const bite = new THREE.Mesh(new THREE.CircleGeometry(0.085, 16), dark);
-  bite.position.set(0.05, 1.45, 0.537);
-  for (const m of [box, roof, door]) { m.castShadow = true; m.receiveShadow = true; }
-  body.add(box, roof, door, moon, bite);
-  // The door faces +z in the model; turn it to face the tree (−z of the group is away).
-  hinge.rotation.y = 0;
-  g.rotation.order = 'YXZ';
-  body.rotation.y = 0;
+  bite.position.set(0.05, 0.63, 0.024);
+  door.add(moon, bite);
+  add(new THREE.BoxGeometry(0.9, 0.45, 0.45), dark, [0, 0.225, -0.22], 'seat');
+  // The toilet roll, on the seat: white paper round a brown core.
+  const roll = add(new THREE.CylinderGeometry(0.1, 0.1, 0.15, 14), new THREE.MeshStandardMaterial({ color: 0xf4f0e6, roughness: 0.8 }), [0.25, 0.51, -0.22], 'roll');
+  roll.rotation.z = Math.PI / 2;
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.155, 8), new THREE.MeshStandardMaterial({ color: 0x9a6a3a }));
+  roll.add(core);
   return g;
 }

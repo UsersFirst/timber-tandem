@@ -79,9 +79,9 @@ export class Hud {
       case 'fall': {
         setTimeout(() => this.toast('TIMBER!', 'big'), 900);
         // Call the landing as it hits (the score card comes later).
-        const g = ev.landing?.grade;
-        const say = { skid: ['ON THE SKID!', '#7ee08a'], close: ['Close!', '#f2b24c'], wide: ['Wide of the skid', '#f6ead8'], privy: ['GRANDMA’S PRIVY!', '#ff5a4a'] }[g];
-        if (say) setTimeout(() => this.toast(say[0], 'title', say[1]), 3150);
+        // The scene calls the landing on the hit (landed()); without a scene, on a timer.
+        clearTimeout(this.landTimer);
+        this.landTimer = /** @type {any} */ (setTimeout(() => this.landed(ev.landing?.grade), document.documentElement.dataset.noscene ? 3150 : 6500));
         break;
       }
       case 'score': this.showScore(ev.score, ev.last); break;
@@ -100,6 +100,14 @@ export class Hud {
       case 'paused': $('paused').hidden = !ev.on; break;
       default:
     }
+  }
+
+  /** Call the landing as the tree hits. @param {string} [grade] */
+  landed(grade) {
+    clearTimeout(this.landTimer);
+    this.landTimer = 0;
+    const say = { skid: ['ON THE SKID!', '#7ee08a'], close: ['Close!', '#f2b24c'], wide: ['Wide of the skid', '#f6ead8'], privy: ['GRANDMA’S PRIVY!', '#ff5a4a'] }[grade || ''];
+    if (say) this.toast(say[0], 'title', say[1]);
   }
 
   /** @param {string} text @param {'bad'|'soft'|'big'|'title'|'turn'|'tantrum'} kind @param {string} [color] */

@@ -127,14 +127,18 @@ export async function createScene(canvas, opts = {}) {
       camGoal.fov = 50;
     }
     if (mode === 'skid') {
-      // Behind the tree, up high, looking straight down the skid: the chalk
-      // line runs up the picture, so a fall on target lands right along it.
+      // Three-quarters from behind, off to the left of the skid line: the
+      // fall sweeps across the picture (not straight away from the lens),
+      // the skid runs diagonally into the frame, and the privy sits beyond
+      // it on the right, so where it lands still reads at a glance.
       const th = THREE.MathUtils.degToRad(tree.targetDeg);
       const d = new THREE.Vector3(Math.sin(th), 0, -Math.cos(th));
+      const side = new THREE.Vector3(Math.cos(th), 0, Math.sin(th));
       const H = tree.def.height;
-      camGoal.pos.copy(d).multiplyScalar(-4.2).add(new THREE.Vector3(0, H * 0.42 + 2.4, 0));
-      camGoal.at.copy(d).multiplyScalar(H * 0.62).add(new THREE.Vector3(0, 0.4, 0));
-      camGoal.fov = 52;
+      // Far enough back that the whole tree, upright to flat, stays in frame.
+      camGoal.pos.copy(d).multiplyScalar(-H * 0.2).addScaledVector(side, -(H * 1.05 + 2.4)).add(new THREE.Vector3(0, H * 0.42 + 1.8, 0));
+      camGoal.at.copy(d).multiplyScalar(H * 0.38).add(new THREE.Vector3(0, H * 0.3, 0));
+      camGoal.fov = 54;
     }
     // The notch is on the far (−z) face, so its camera looks back toward the
     // couch. Cut to it (no swing) and mirror the picture, so Sir Winston
@@ -168,6 +172,14 @@ export async function createScene(canvas, opts = {}) {
   let camKick = 0;
   /** Scene time of the last tantrum (repeats get a smaller take). */
   let lastTantrum = -1e9;
+  // The fall's direction: slow motion state, the privy's hold, the landing grade.
+  let slowMo = false, smashHold = 0, clatterReady = false, voiceOn = false;
+  /** @type {string|undefined} */
+  let fallGrade;
+  /** Scene → presenter: sounds, the fall voice, slow motion, the landing. @type {(kind: string, data: any) => void} */
+  let listener = () => {};
+  /** @param {string} kind @param {any} data */
+  const emit = (kind, data) => { try { listener(kind, data); } catch (e) { console.error(e); } };
   /** @type {SceneView} */
   let lastView = { phase: 'idle', s: 0, e: 0, zone: 'green', blame: null, lean: 0, cutFrac: 0, notchFrac: 0, litFace: null };
 
@@ -271,23 +283,58 @@ export async function createScene(canvas, opts = {}) {
     tree.setLit(view.phase === 'notch' && view.litFace ? SEAT_COLOR[view.litFace] : null, 0.5 + 0.5 * Math.sin(time * 7));
     tree.setGhost(view.aimDeg ?? view.lean * 25, view.aimGrade || 'wide', view.phase === 'saw' ? 1 : 0);
     tree.updateProps(dt);
+    const thumps = tree.takeLandings();
+    if (thumps && clatterReady) { clatterReady = false; emit('sound', { name: 'clatter', gain: 0.9 }); }
 
-    // Fall physics (slow-mo during the main fall).
+    // The fall (PLAN §4.8): crack → slow motion through the middle of the
+    // fall → full speed for the impact. A privy hit holds the slow motion
+    // while it smashes.
     if (tree.falling && !tree.landed) {
-      timeScale = tree.phi > 0.35 && tree.phi < 1.35 ? 0.4 : 1;
+      if (smashHold > 0) smashHold -= dtReal;
+      const slow = smashHold > 0 || (tree.phi > 0.35 && tree.phi < 1.32);
+      timeScale = smashHold > 0 ? 0.3 : slow ? 0.4 : 1;
+      if (slow !== slowMo) { slowMo = slow; emit('slowmo', { on: slow }); }
       const ev = tree.stepFall(dt);
-      if (ev === 'impact' && tree.privyHit) {
-        tree.knockPrivy();
-        fx.puff(tree.privyPos(), { n: 10, spread: 1.4, rise: 1.2, life: 2.4 });
-        fx.burst(tree.privyPos().add(new THREE.Vector3(0, 1.2, 0)), new THREE.Vector3(0, 1, 0), { n: 20, speed: 3.2, size: 0.06, color: 0x8a5a33, life: 1.6 });
+      // Its voice: the hinge creaks as it starts; the crown rushes as it speeds up.
+      const tip = tree.omega * (tree.def.height - CUT_Y);
+      emit('voice', { creak: Math.max(0, 1 - tree.phi / 0.7), rush: Math.min(1, tip / 16), slow });
+      // Needles shed from the crown as it tears through the air.
+      if (tip > 3 && Math.random() < 0.6) {
+        const crown = new THREE.Vector3(0, (tree.def.height - CUT_Y) * (0.55 + Math.random() * 0.4), tree.radius * 0.75);
+        tree.upper.localToWorld(crown);
+        fx.burst(crown, new THREE.Vector3(0, 0.3, 0), { n: 2, speed: 0.6, size: 0.03, color: 0x5d7a2e, spread: 2, life: 2.5, grav: 0.12, drag: 1.5 });
+      }
+      if (tree.privyHit && tree.privyContact()) {
+        const c = tree.smashPrivy();
+        smashHold = 0.9;
+        clatterReady = true;
+        shake = Math.max(shake, 0.6);
+        fx.puff(c, { n: 14, spread: 1.6, rise: 1.4, life: 2.6 });
+        fx.burst(c.clone().add(new THREE.Vector3(0, 0.8, 0)), new THREE.Vector3(0, 1, 0), { n: 30, speed: 4, size: 0.045, color: 0x8a5a33, life: 1.8 });
+        emit('sound', { name: 'smash' });
+        emit('sound', { name: 'whistle', delay: 0.35 });
       }
       if (ev === 'impact' || ev === 'bounce') {
-        shake = ev === 'impact' ? 1 : 0.4;
-        for (const p of tree.trunkPoints(9)) fx.puff(p, { n: ev === 'impact' ? 5 : 2, spread: 1.0, rise: 0.9, life: 2.2 });
-        fx.burst(tree.trunkPoints(1)[0], new THREE.Vector3(0, 1, 0), { n: 18, speed: 3, size: 0.05, color: 0x6e8a3a, life: 1.6 });
+        const big = ev === 'impact';
+        shake = big ? 1.2 : 0.4;
+        camKick = Math.max(camKick, big ? 0.7 : 0.2);
+        const pts = tree.trunkPoints(9);
+        for (const p of pts) fx.puff(p, { n: big ? 6 : 2, spread: 1.1, rise: 1.0, life: 2.4 });
+        if (big) {
+          fx.ring(pts[4], tree.def.height * 0.55);
+          fx.burst(pts[6], new THREE.Vector3(0, 1, 0), { n: 26, speed: 3.4, size: 0.05, color: 0x6e8a3a, life: 1.8 });
+          // Needles thrown high, drifting back down for a while.
+          fx.burst(pts[7].clone().add(new THREE.Vector3(0, 0.6, 0)), new THREE.Vector3(0, 1, 0), { n: 40, speed: 3, size: 0.03, color: 0x5d7a2e, spread: 1.6, life: 4, grav: 0.08, drag: 2 });
+          emit('sound', { name: 'boom' });
+          emit('land', { grade: fallGrade });
+        } else emit('sound', { name: 'thud', gain: 0.45 });
       }
       if (ev === 'settled' && fallJob) fallJob.settledAt = time;
-    } else timeScale = 1;
+    } else {
+      timeScale = 1;
+      if (slowMo) { slowMo = false; emit('slowmo', { on: false }); }
+      if (tree.landed && voiceOn) { voiceOn = false; emit('voice', { creak: 0, rush: 0, slow: false }); }
+    }
     if (fallJob && fallJob.settledAt !== null && time - fallJob.settledAt > 0.9) {
       const r = fallJob.resolve;
       fallJob = null;
@@ -497,13 +544,24 @@ export async function createScene(canvas, opts = {}) {
         tree.startFall(angleDeg);
         tree.bounced = false;
         tree.privyHit = grade === 'privy';
+        fallGrade = grade;
+        voiceOn = true;
         fallJob = { resolve, settledAt: null };
-        setCamera('skid');
+        // The crack: a beat close on the trunk as the hinge goes, then cut
+        // to behind the tree, looking down the skid.
+        emit('sound', { name: 'crack' });
+        shake = Math.max(shake, 0.35);
+        camKick = Math.max(camKick, 0.5);
+        later(0.5, () => setCamera('skid'));
+        // A slow push in through the slow motion.
+        later(1.2, () => { camGoal.pos.lerp(camGoal.at, 0.14); });
         fx.burst(new THREE.Vector3(0, CUT_Y, -tree.radius * 0.6), new THREE.Vector3(0, 0.4, -1), { n: 10, speed: 1.2, size: 0.03 });
       });
     },
     celebrate() { celebrating = true; },
     setCamera,
+    /** Scene events for the presenter: 'sound' {name, gain?, delay?}, 'voice' {creak, rush, slow}, 'slowmo' {on}, 'land' {grade}. @param {(kind: string, data: any) => void} fn */
+    onEvent(fn) { listener = fn; },
     resize(w, h) {
       renderer.setSize(w, h, false);
       camera.aspect = w / Math.max(1, h);
@@ -537,6 +595,7 @@ export async function createScene(canvas, opts = {}) {
  * @property {(mode: 'intro'|'notch'|'saw'|'wide'|'skid') => void} setCamera
  * @property {(w: number, h: number) => void} resize
  * @property {{drawCalls: number, triangles: number}} info
+ * @property {(fn: (kind: string, data: any) => void) => void} onEvent
  * @property {() => void} dispose
  * @property {any} [_debug]  dev tools and smokes only
  */

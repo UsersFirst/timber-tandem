@@ -18,10 +18,10 @@ export class Fx {
     this.chips.name = 'fx-chips';
     this.chips.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(this.chips);
-    /** @type {{p:THREE.Vector3, v:THREE.Vector3, r:THREE.Euler, w:THREE.Vector3, s:number, life:number, max:number}[]} */
+    /** @type {{p:THREE.Vector3, v:THREE.Vector3, r:THREE.Euler, w:THREE.Vector3, s:number, life:number, max:number, grav:number, drag:number}[]} */
     this.c = [];
     for (let i = 0; i < CHIP_N; i++) {
-      this.c.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), s: 0, life: 0, max: 1 });
+      this.c.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), s: 0, life: 0, max: 1, grav: 1, drag: 0 });
       this.chips.setColorAt(i, new THREE.Color(0xe8c48c));
       this.chips.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
     }
@@ -47,7 +47,7 @@ export class Fx {
 
   /**
    * @param {THREE.Vector3} at @param {THREE.Vector3} dir  main throw direction
-   * @param {{n?:number, speed?:number, size?:number, color?:number, spread?:number, life?:number}} o
+   * @param {{n?:number, speed?:number, size?:number, color?:number, spread?:number, life?:number, grav?:number, drag?:number}} o
    */
   burst(at, dir, o = {}) {
     const n = o.n ?? 12;
@@ -65,6 +65,8 @@ export class Fx {
       c.s = (o.size ?? 0.035) * (0.6 + Math.random() * 0.8);
       c.max = (o.life ?? 1.4) * (0.7 + Math.random() * 0.6);
       c.life = c.max;
+      c.grav = o.grav ?? 1;
+      c.drag = o.drag ?? 0;
       this.chips.setColorAt(i, col.clone().multiplyScalar(0.85 + Math.random() * 0.3));
     }
     if (this.chips.instanceColor) this.chips.instanceColor.needsUpdate = true;
@@ -84,14 +86,37 @@ export class Fx {
     }
   }
 
+  /** A ring of dust rolling out along the ground from an impact. @param {THREE.Vector3} at @param {number} [size] */
+  ring(at, size = 4) {
+    if (!this.rings) {
+      this.rings = [];
+      this.ringMat = new THREE.MeshBasicMaterial({ color: 0xd9c19a, transparent: true, opacity: 0, depthWrite: false });
+      this.ringGeo = new THREE.RingGeometry(0.7, 1, 40);
+      this.ringGeo.rotateX(-Math.PI / 2);
+    }
+    const m = new THREE.Mesh(this.ringGeo, this.ringMat.clone());
+    m.position.set(at.x, 0.05, at.z);
+    m.userData = { t: 0, size };
+    this.chips.parent?.add(m);
+    this.rings.push(m);
+  }
+
   /** @param {number} dt seconds */
   update(dt) {
+    if (this.rings) for (const m of [...this.rings]) {
+      m.userData.t += dt;
+      const k = m.userData.t / 1.1;
+      if (k >= 1) { m.parent?.remove(m); this.rings.splice(this.rings.indexOf(m), 1); continue; }
+      m.scale.setScalar(0.3 + m.userData.size * (1 - Math.pow(1 - k, 3)));
+      /** @type {THREE.MeshBasicMaterial} */ (m.material).opacity = 0.55 * (1 - k);
+    }
     const g = -9.8;
     for (let i = 0; i < CHIP_N; i++) {
       const c = this.c[i];
       if (c.life <= 0) continue;
       c.life -= dt;
-      c.v.y += g * dt;
+      c.v.y += g * c.grav * dt;
+      if (c.drag) { c.v.multiplyScalar(1 - Math.min(0.9, c.drag * dt)); c.v.x += Math.sin(c.life * 7 + i) * 0.6 * dt; }
       c.p.addScaledVector(c.v, dt);
       if (c.p.y < 0.02) { c.p.y = 0.02; c.v.multiplyScalar(0.3); c.v.y = Math.abs(c.v.y) * 0.2; c.w.multiplyScalar(0.5); }
       c.r.x += c.w.x * dt; c.r.y += c.w.y * dt; c.r.z += c.w.z * dt;

@@ -18,10 +18,10 @@
 // output latency), else currentTime minus outputLatency.
 // ============================================================
 
-/** @typedef {'bite'|'chatter'|'tantrum'|'tok'|'chip'|'clang'|'notch-done'|'creak'|'timber'|'thud'|'ui-ok'|'ui-back'|'join'|'star'|'tut'|'honk'} SfxName */
+/** @typedef {'bite'|'chatter'|'tantrum'|'tok'|'chip'|'clang'|'notch-done'|'creak'|'timber'|'thud'|'ui-ok'|'ui-back'|'join'|'star'|'tut'|'honk'|'crack'|'boom'|'smash'|'clatter'|'whistle'} SfxName */
 
 /** @type {readonly SfxName[]} */
-export const SFX_NAMES = Object.freeze(['bite', 'chatter', 'tantrum', 'tok', 'chip', 'clang', 'notch-done', 'creak', 'timber', 'thud', 'ui-ok', 'ui-back', 'join', 'star', 'tut', 'honk']);
+export const SFX_NAMES = Object.freeze(['bite', 'chatter', 'tantrum', 'tok', 'chip', 'clang', 'notch-done', 'creak', 'timber', 'thud', 'ui-ok', 'ui-back', 'join', 'star', 'tut', 'honk', 'crack', 'boom', 'smash', 'clatter', 'whistle']);
 
 const LOOKAHEAD_MS = 120;
 const TICK_MS = 25;
@@ -206,7 +206,11 @@ export class TimberAudio {
     this.comp.release.value = 0.18;
     this.master.connect(this.comp).connect(c.destination);
 
-    this.sfxBus = c.createGain(); this.sfxBus.gain.value = 0.9; this.sfxBus.connect(this.master);
+    // The world filter: wide open, except in slow motion, when every sound
+    // effect is muffled (the fall's "time slows down" feel).
+    this.worldLp = c.createBiquadFilter(); this.worldLp.type = 'lowpass'; this.worldLp.frequency.value = 20000; this.worldLp.Q.value = 0.7;
+    this.worldLp.connect(this.master);
+    this.sfxBus = c.createGain(); this.sfxBus.gain.value = 0.9; this.sfxBus.connect(this.worldLp);
     this.sawBus = c.createGain(); this.sawBus.gain.value = 0.8; this.sawBus.connect(this.master);
     this.songBus = c.createGain(); this.songBus.gain.value = 0.55; this.songBus.connect(this.master);
     /** @type {GainNode[]} */
@@ -231,6 +235,69 @@ export class TimberAudio {
     this.vib.start();
 
     this._buildSawVoice();
+    this._buildFallVoice();
+  }
+
+  /** The falling tree's continuous voice: hinge creak, air rush, leaves, and a sub "whoom" in slow motion. */
+  _buildFallVoice() {
+    const c = /** @type {BaseAudioContext} */ (this.ctx);
+    const bus = /** @type {GainNode} */ (this.sfxBus);
+    const now = c.currentTime;
+    const g0 = () => { const g = c.createGain(); g.gain.value = 0; return g; };
+    // Creak: a strained sawtooth through a resonant band, stuttering like fibres tearing.
+    this.fcOsc = c.createOscillator(); this.fcOsc.type = 'sawtooth'; this.fcOsc.frequency.value = 62; this.fcOsc.start(now);
+    const cbp = c.createBiquadFilter(); cbp.type = 'bandpass'; cbp.frequency.value = 900; cbp.Q.value = 9;
+    this.fcBp = cbp;
+    const am = c.createGain(); am.gain.value = 0.5;
+    const jit = c.createOscillator(); jit.type = 'square'; jit.frequency.value = 21; jit.start(now);
+    const jd = c.createGain(); jd.gain.value = 0.5; jit.connect(jd).connect(am.gain);
+    this.fcGain = g0();
+    this.fcOsc.connect(cbp).connect(am).connect(this.fcGain).connect(bus);
+    // Rush: the crown tearing through the air.
+    const rn = c.createBufferSource(); rn.buffer = this.noise; rn.loop = true; rn.start(now, 0.7);
+    this.frBp = c.createBiquadFilter(); this.frBp.type = 'bandpass'; this.frBp.frequency.value = 300; this.frBp.Q.value = 0.8;
+    this.frGain = g0();
+    rn.connect(this.frBp).connect(this.frGain).connect(bus);
+    // Leaves: high rustle.
+    const ln = c.createBufferSource(); ln.buffer = this.noise; ln.loop = true; ln.start(now, 1.3);
+    const lhp = c.createBiquadFilter(); lhp.type = 'highpass'; lhp.frequency.value = 4800;
+    this.flGain = g0();
+    ln.connect(lhp).connect(this.flGain).connect(bus);
+    // Whoom: a sub swell under the slow motion.
+    this.fwOsc = c.createOscillator(); this.fwOsc.type = 'sine'; this.fwOsc.frequency.value = 44; this.fwOsc.start(now);
+    this.fwGain = g0();
+    this.fwOsc.connect(this.fwGain).connect(this.master);
+  }
+
+  /**
+   * Drive the fall voice (call every frame while a tree falls).
+   * @param {{creak?:number, rush?:number, slow?:boolean}} v 0..1 levels
+   * @param {number} [at] AudioContext time (offline renders); default now
+   */
+  setFallVoice(v, at) {
+    if (!this.ctx || !this.fcGain) return;
+    const t = at ?? this.ctx.currentTime;
+    const cr = clamp(v.creak ?? 0, 0, 1), ru = clamp(v.rush ?? 0, 0, 1), slow = v.slow ? 1 : 0;
+    this.fcGain.gain.setTargetAtTime(0.42 * cr, t, 0.04);
+    this.fcOsc.frequency.setTargetAtTime(58 + 46 * cr, t, 0.08);
+    this.fcBp.frequency.setTargetAtTime(700 + 700 * cr, t, 0.08);
+    // In slow motion the rush drops an octave and a half and swells.
+    this.frGain.gain.setTargetAtTime(0.34 * ru * (slow ? 1.25 : 1), t, 0.05);
+    this.frBp.frequency.setTargetAtTime((350 + 1500 * ru) * (slow ? 0.35 : 1), t, 0.12);
+    this.flGain.gain.setTargetAtTime(0.1 * ru * (slow ? 0.6 : 1), t, 0.08);
+    this.fwGain.gain.setTargetAtTime(0.28 * ru * slow, t, 0.15);
+  }
+
+  /**
+   * Slow motion: muffle the sound effects and duck the song.
+   * @param {boolean} on @param {number} [at] AudioContext time
+   */
+  setSlowMo(on, at) {
+    if (!this.ctx || !this.worldLp) return;
+    const t = at ?? this.ctx.currentTime;
+    this.worldLp.frequency.cancelScheduledValues(t);
+    this.worldLp.frequency.setTargetAtTime(on ? 1100 : 20000, t, on ? 0.12 : 0.05);
+    this.songBus?.gain.setTargetAtTime(on ? 0.12 : 0.55, t, 0.2);
   }
 
   _buildSawVoice() {
@@ -639,12 +706,12 @@ export class TimberAudio {
 
   /**
    * @param {SfxName} name
-   * @param {{pan?:number, gain?:number, atPerfMs?:number}} [opts]
+   * @param {{pan?:number, gain?:number, atPerfMs?:number, atCtx?:number}} [opts]
    */
   play(name, opts = {}) {
     if (!this.ctx) return;
     const c = this.ctx;
-    const t = this._when(opts.atPerfMs);
+    const t = typeof opts.atCtx === 'number' ? opts.atCtx : this._when(opts.atPerfMs);
     const out = c.createGain();
     out.gain.value = clamp(opts.gain ?? 1, 0, 2);
     let node = /** @type {AudioNode} */ (out);
@@ -832,6 +899,68 @@ const SFX = {
     lv.connect(hp).connect(lg).connect(out);
     lv.start(t + 1.0, 0.3); lv.stop(t + 2.8);
     return 2.9;
+  },
+  /** The hinge lets go: one big snap, splinters, a groan. */
+  crack(t, out) {
+    this._noiseBurst(t, 0.06, 'highpass', 1400, 0.7, 0.75, out, 0.001);
+    this._noiseBurst(t, 0.18, 'bandpass', 600, 1.2, 0.45, out, 0.001);
+    this._tone(t, 'triangle', 190, 60, 0.16, 0.5, out, 0.001);
+    for (let i = 0; i < 9; i++) this._noiseBurst(t + 0.03 + i * (0.02 + Math.random() * 0.035), 0.014, 'bandpass', 1800 + Math.random() * 3000, 2, 0.32 * (1 - i / 12), out);
+    return 0.6;
+  },
+  /** The tree hits the ground: a sub thump, a woody crunch, branches, needles. */
+  boom(t, out) {
+    this._tone(t, 'sine', 70, 28, 1.3, 1.0, out, 0.002);
+    this._tone(t, 'sine', 46, 30, 0.9, 0.6, out, 0.004);
+    this._tone(t, 'triangle', 120, 50, 0.3, 0.4, out, 0.002);
+    this._noiseBurst(t, 0.6, 'lowpass', 380, 0.8, 0.8, out, 0.003);
+    this._noiseBurst(t + 0.01, 0.25, 'bandpass', 900, 0.9, 0.35, out, 0.002);
+    // Branches snapping and needles hissing as the crown crushes.
+    for (let i = 0; i < 16; i++) {
+      const tt = t + 0.03 + Math.random() * 0.5;
+      this._noiseBurst(tt, 0.01 + Math.random() * 0.02, 'bandpass', 1200 + Math.random() * 3500, 1.6, 0.12 + Math.random() * 0.12, out);
+    }
+    this._noiseBurst(t + 0.05, 1.4, 'highpass', 5000, 0.7, 0.12, out, 0.05);
+    // A dull echo off the woods.
+    this._tone(t + 0.32, 'sine', 62, 34, 0.7, 0.22, out, 0.01);
+    this._noiseBurst(t + 0.32, 0.4, 'lowpass', 260, 0.8, 0.18, out, 0.01);
+    return 2.0;
+  },
+  /** The privy goes: a splintering crash and a crunch of planks. */
+  smash(t, out) {
+    this._noiseBurst(t, 0.09, 'highpass', 900, 0.7, 0.9, out, 0.001);
+    this._noiseBurst(t, 0.5, 'bandpass', 520, 0.9, 0.7, out, 0.002);
+    this._tone(t, 'triangle', 210, 70, 0.25, 0.55, out, 0.001);
+    this._tone(t, 'sine', 90, 40, 0.5, 0.5, out, 0.002);
+    for (let i = 0; i < 22; i++) {
+      const tt = t + 0.01 + Math.random() * 0.45;
+      this._noiseBurst(tt, 0.008 + Math.random() * 0.03, 'bandpass', 700 + Math.random() * 3800, 2, 0.15 + Math.random() * 0.2, out);
+    }
+    return 1.0;
+  },
+  /** Planks landing and knocking about. */
+  clatter(t, out) {
+    for (let i = 0; i < 14; i++) {
+      const tt = t + Math.pow(i / 14, 1.4) * 1.3 + Math.random() * 0.04;
+      const f = 260 + Math.random() * 380;
+      this._tone(tt, 'triangle', f, f * 0.8, 0.07, 0.22 * (1 - i / 18), out, 0.001);
+      this._noiseBurst(tt, 0.03, 'bandpass', 1400 + Math.random() * 1200, 3, 0.12, out, 0.001);
+    }
+    return 1.6;
+  },
+  /** The comic slide whistle down (the toilet roll's trip). */
+  whistle(t, out) {
+    const c = /** @type {BaseAudioContext} */ (this.ctx);
+    const o = c.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(1900, t);
+    o.frequency.exponentialRampToValueAtTime(380, t + 0.85);
+    const vib = c.createOscillator(); vib.frequency.value = 7; const vd = c.createGain(); vd.gain.value = 18; vib.connect(vd).connect(o.frequency);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.22, t + 0.04);
+    g.gain.setValueAtTime(0.2, t + 0.75); g.gain.linearRampToValueAtTime(0, t + 0.9);
+    o.connect(g).connect(out);
+    o.start(t); vib.start(t); o.stop(t + 0.95); vib.stop(t + 0.95);
+    return 1.0;
   },
   thud(t, out) {
     this._tone(t, 'sine', 58, 33, 0.7, 0.8, out, 0.002);
