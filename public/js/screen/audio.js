@@ -312,11 +312,14 @@ export class TimberAudio {
     this.humOsc = [mk('sine', f0), mk('sine', f0 * 2.003), mk('sine', f0 * 2.76)];
     const humMix = c.createGain(); humMix.gain.value = 1;
     [0.6, 0.22, 0.1].forEach((amp, i) => { const g = c.createGain(); g.gain.value = amp; this.humOsc[i].connect(g).connect(humMix); });
+    // Tremolo on its own stage (gain 1 ± 0.08), BEFORE the level: wired into
+    // the level itself it kept the hum pulsing even at zero (a constant whine).
     const trem = mk('sine', 4.2); const tremD = c.createGain(); tremD.gain.value = 0.08; trem.connect(tremD);
+    const tremStage = c.createGain(); tremStage.gain.value = 1;
+    tremD.connect(tremStage.gain);
     this.humGain = g0();
     const humLp = c.createBiquadFilter(); humLp.type = 'lowpass'; humLp.frequency.value = 2800;
-    tremD.connect(this.humGain.gain);
-    humMix.connect(humLp).connect(this.humGain).connect(bus);
+    humMix.connect(humLp).connect(tremStage).connect(this.humGain).connect(bus);
 
     // Groan: compression, detuned low saws.
     const ga = mk('sawtooth', 68), gb = mk('sawtooth', 71.3);
