@@ -39,7 +39,7 @@ export class Presenter {
       this.scene.onEvent((/** @type {string} */ kind, /** @type {any} */ d) => {
         const a = this.audio;
         if (kind === 'sound' && a.ready) {
-          const go = () => a.play(d.name, { gain: d.gain ?? 1 });
+          const go = () => a.play(d.name, { gain: d.gain ?? 1, pan: d.pan ?? 0 });
           if (d.delay) setTimeout(go, d.delay * 1000); else go();
         }
         if (kind === 'voice' && a.ready) a.setFallVoice(d);

@@ -215,6 +215,27 @@ sawing, each goose's root stays put and the body carries the stroke:
 Tantrum reactions still layer on top. `scripts/dev-saw-clip.mjs` films a
 stroke from the game camera and two low close-ups.
 
+## Grandma and Grandpa (2026-10-24)
+
+- **Models** come from tandemonium-claude-3d (`out/outfit_grand{ma,pa}-goose/*_full_dressed.glb`),
+  compressed for the web with gltf-transform (dedup, prune, textures resized to
+  1024 and WebP): `assets/geese/goose_grandma.glb` and `goose_grandpa.glb`, about 7 MB each.
+  The old Georgian stand-in is gone.
+- **True size:** they're shorter and wider, with their own bone lengths, so they
+  keep their real scale (`TRUE_SCALE`) instead of being stretched to 1.6 m.
+  They borrow the young geese's clips (Grandma the stoker's, Grandpa the
+  captain's) through `retargetClip`: rotations only, plus the hips' travel
+  scaled to their leg length. The sawing stance scales its crouch and stance
+  width by leg length (`_legK`).
+- **Grandpa** (scene/grandpa.js) isn't a player. He sits in a rocking chair at
+  the edge of the clearing (x −2.9, z −1.3): in the saw camera's view, opposite
+  the privy, ≈66° off the fall line (falls stay within ≈37°). A seated pose
+  (`Goose._sitPose`, leg IK) puts him on the seat with his hands folded on his
+  belly. He rocks on the runners, follows the saw (and the falling tree) with
+  his head, shakes it and honks at a tantrum, stops rocking and leans in when
+  the tree goes, and throws his wings up with a honk when it lands. A privy
+  smash gets a sorry head tilt instead.
+
 ## Tests
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing, modes and menus.

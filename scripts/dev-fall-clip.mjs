@@ -21,7 +21,8 @@ const FPS = 30, DT = 1000 / FPS, PRE = 1.6, POST = 3.2;
 const b = await puppeteer.launch({ headless: 'new', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const p = await b.newPage(); await p.setViewport({ width: 1280, height: 720 });
 const errs = []; p.on('pageerror', (e) => errs.push(e.message));
-await p.goto(`${base}/dev/scene.html?nopanel&manual`); await p.waitForFunction(() => document.title === 'READY', { timeout: 120000 });
+await p.goto(`${base}/dev/scene.html?nopanel&manual${process.env.CASTB ? '&castB=' + process.env.CASTB : ''}`);
+await p.waitForFunction(() => document.title === 'READY', { timeout: 120000 }); await p.evaluate(() => window.__scene._debug.grandpa?.ready);
 await p.evaluate((kind) => {
   // Game-like overlays: letterbox bars and the call-out toasts.
   document.head.insertAdjacentHTML('beforeend', `<style>
@@ -97,7 +98,7 @@ const wav = await p.evaluate(async (dur, pre) => {
   a.play('bite', { atCtx: 0.35 }); a.play('bite', { atCtx: 0.98 });
   let lastVoice = -1;
   for (const e of window.__log) {
-    if (e.k === 'sound') a.play(e.d.name, { atCtx: e.t + (e.d.delay || 0), gain: e.d.gain ?? 1 });
+    if (e.k === 'sound') a.play(e.d.name, { atCtx: e.t + (e.d.delay || 0), gain: e.d.gain ?? 1, pan: e.d.pan ?? 0 });
     if (e.k === 'voice' && e.t - lastVoice > 0.015) { a.setFallVoice(e.d, e.t); lastVoice = e.t; }
     if (e.k === 'slowmo') a.setSlowMo(e.d.on, e.t);
     if (e.k === 'land' && e.d.grade === 'privy') a.play('tut', { atCtx: e.t + 1.3 });

@@ -23,6 +23,7 @@ import { Saw, makeHatchet, BLADE_L, TRAVEL } from './scene/saw.js';
 import { loadGoose } from './scene/geese.js';
 import { Fx } from './scene/fx.js';
 import { TantrumFx, geeseTantrum } from './scene/tantrum.js';
+import { Grandpa } from './scene/grandpa.js';
 
 /**
  * @typedef {object} SceneView
@@ -77,6 +78,8 @@ export async function createScene(canvas, opts = {}) {
   scene.add(saw.group);
   const fx = new Fx(scene);
   const tfx = new TantrumFx(scene);
+  // Grandpa watches from his rocking chair (loads after the cast; not a player).
+  const grandpa = new Grandpa(scene, (at, fn) => later(at, fn));
 
   // Seat rings on the ground (who is who; brighten on your notch turn).
   /** @type {Record<'A'|'B', THREE.Mesh>} */
@@ -329,6 +332,8 @@ export async function createScene(canvas, opts = {}) {
           fx.burst(pts[7].clone().add(new THREE.Vector3(0, 0.6, 0)), new THREE.Vector3(0, 1, 0), { n: 40, speed: 3, size: 0.03, color: 0x5d7a2e, spread: 1.6, life: 4, grav: 0.08, drag: 2 });
           emit('sound', { name: 'boom' });
           emit('land', { grade: fallGrade });
+          grandpa.landed(time, fallGrade === 'privy');
+          if (grandpa.goose && fallGrade !== 'privy') emit('sound', { name: 'honk', gain: 0.45, delay: 0.25, pan: -0.6 });
         } else emit('sound', { name: 'thud', gain: 0.45 });
       }
       if (ev === 'settled' && fallJob) fallJob.settledAt = time;
@@ -434,6 +439,9 @@ export async function createScene(canvas, opts = {}) {
       g.update(dt, hands);
     }
 
+    // Grandpa watches the falling tree, or else the saw.
+    const watchAt = tree.falling && !tree.landed ? tree.trunkPoints(9)[5] : _watch.set(saw.group.position.x, CUT_Y + 0.2, saw.group.position.z);
+    grandpa.update(dt, time, watchAt);
     fx.update(dt);
     tfx.update(dt);
     env.update(dt);
@@ -463,6 +471,7 @@ export async function createScene(canvas, opts = {}) {
     renderer.render(scene, camera);
   }
 
+  const _watch = new THREE.Vector3();
   const _sph1 = new THREE.Spherical(), _sph2 = new THREE.Spherical();
   const _off1 = new THREE.Vector3(), _off2 = new THREE.Vector3();
 
@@ -507,6 +516,7 @@ export async function createScene(canvas, opts = {}) {
       return castQueue;
     },
     setTree(def) {
+      grandpa.reset();
       tree.build(def.kind, def.targetDeg);
       celebrating = false;
       for (const seat of /** @type {const} */ (['A', 'B'])) chop[seat] = null;
@@ -519,6 +529,9 @@ export async function createScene(canvas, opts = {}) {
       fx.burst(ends[1], new THREE.Vector3(1, -0.2, 0.3), { n: 7, speed: 1.3, size: 0.018, color: 0xf0d3a0, spread: 0.6, life: 1.0 });
     },
     tantrum(blame, kind = 'push') {
+      // Grandpa shakes his head and heckles from the chair (he sits on the left).
+      later(0.3, () => grandpa.tantrum());
+      if (grandpa.goose) emit('sound', { name: 'honk', gain: 0.35, delay: 0.42, pan: -0.6 });
       const small = time - lastTantrum < 2.5;
       lastTantrum = time;
       saw.tantrum(blame, kind, small);
@@ -551,6 +564,7 @@ export async function createScene(canvas, opts = {}) {
     },
     chatter() { saw.chatter(); },
     fall(angleDeg, grade) {
+      later(0.6, () => grandpa.fallStarts());
       return new Promise((resolve) => {
         tree.startFall(angleDeg);
         tree.bounced = false;
@@ -583,7 +597,7 @@ export async function createScene(canvas, opts = {}) {
     get _debug() {
       /** Park the camera (dev captures). @param {number[]} pos @param {number[]} at @param {number} fov */
       const lockCam = (pos, at, fov) => { camGoal.pos.set(pos[0], pos[1], pos[2]); camGoal.at.set(at[0], at[1], at[2]); camGoal.fov = fov; cam.pos.copy(camGoal.pos); cam.at.copy(camGoal.at); cam.fov = fov; };
-      return { scene, camera, renderer, geese, saw, tree, fx, tfx, lockCam };
+      return { scene, camera, renderer, geese, saw, tree, fx, tfx, lockCam, grandpa };
     },
     dispose() {
       renderer.dispose();

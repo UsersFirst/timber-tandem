@@ -15,14 +15,42 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-/** @typedef {'winston'|'victoria'|'grandma'} CastId */
+/** @typedef {'winston'|'victoria'|'grandma'|'grandpa'} CastId */
 
 const ASSET = new URL('../../../assets/geese/', import.meta.url).href;
 const FILES = {
   winston: { model: 'goose_captain.glb', clips: 'goose_captain_clips.glb' },
   victoria: { model: 'goose_stoker_victorian.glb', clips: 'goose_stoker_victorian_clips.glb' },
-  grandma: { model: 'goose_stoker_georgian.glb', clips: 'goose_stoker_georgian_clips.glb' },
+  // The grandparents are shorter and wider (their own bone lengths), so they
+  // keep their true size and borrow the young geese's clips, retargeted.
+  grandma: { model: 'goose_grandma.glb', clips: 'goose_stoker_georgian_clips.glb', retarget: true },
+  grandpa: { model: 'goose_grandpa.glb', clips: 'goose_captain_clips.glb', retarget: true },
 };
+
+/** Model metres → world metres for geese kept at their true size (the young geese's 1.72 m rig stands GOOSE_HEIGHT). */
+const TRUE_SCALE = 1.6 / 1.72;
+
+/**
+ * Fit a clip made for the young geese to a goose with different bone
+ * lengths: keep only rotations (and scale), plus the hips' travel scaled to
+ * this goose's leg length. Tracks for bones it doesn't have are dropped.
+ * @param {THREE.AnimationClip} clip @param {Record<string, THREE.Bone>} bones @param {number} hipRatio
+ */
+function retargetClip(clip, bones, hipRatio) {
+  const tracks = [];
+  for (const t of clip.tracks) {
+    const dot = t.name.lastIndexOf('.');
+    const node = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
+    if (!bones[node]) continue;
+    if (prop === 'position') {
+      if (node !== 'Hips') continue;
+      const c = t.clone();
+      for (let i = 0; i < c.values.length; i++) c.values[i] *= hipRatio;
+      tracks.push(c);
+    } else tracks.push(t);
+  }
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
 
 /** World height of a goose (m). The source rig is 1.72 m; slightly smaller reads better next to the trees. */
 export const GOOSE_HEIGHT = 1.6;
@@ -242,8 +270,8 @@ function rotateInRoot(bone, root, ax, ay, az, angle) {
  * One goose on the set.
  */
 export class Goose {
-  /** @param {CastId} id @param {any} gltf @param {any} clipsGltf */
-  constructor(id, gltf, clipsGltf) {
+  /** @param {CastId} id @param {any} gltf @param {any} clipsGltf @param {boolean} [retarget] */
+  constructor(id, gltf, clipsGltf, retarget = false) {
     this.id = id;
     this.root = new THREE.Group();
     this.root.name = 'goose:' + id;
@@ -252,7 +280,7 @@ export class Goose {
     mergeSkinned(this.model);
     const box = new THREE.Box3().setFromObject(this.model);
     const h = box.max.y - box.min.y;
-    this.scale = GOOSE_HEIGHT / h;
+    this.scale = retarget ? TRUE_SCALE : GOOSE_HEIGHT / h;
     this.model.scale.setScalar(this.scale);
     this.model.position.y = -box.min.y * this.scale;
     this.root.add(this.model);
@@ -270,7 +298,15 @@ export class Goose {
     this.mixer = new THREE.AnimationMixer(this.model);
     /** @type {Record<string, THREE.AnimationClip>} */
     this.clips = {};
-    for (const c of [...gltf.animations, ...clipsGltf.animations]) this.clips[c.name] = c;
+    // Clips: the model's own first, then the shared set (retargeted if the
+    // bones are a different length). The model's own idle wins over nothing.
+    let hipRatio = 1;
+    if (retarget) {
+      const src = clipsGltf.scene?.getObjectByName?.('Hips');
+      if (src && this.bones.Hips && src.position.y > 0) hipRatio = this.bones.Hips.position.y / src.position.y;
+    }
+    for (const c of gltf.animations) this.clips[c.name] = c;
+    for (const c of clipsGltf.animations) this.clips[c.name] = retarget ? retargetClip(c, this.bones, hipRatio) : c;
     /** @type {THREE.AnimationAction|null} */
     this.current = null;
     this.currentName = '';
@@ -287,10 +323,11 @@ export class Goose {
     this.react = makeReactor();
     /** The hat in flight: height above the head (m) and vertical speed. */
     this.hat = { y: 0, v: 0, tip: 0 };
-    // Bones the reactions touch go back to rest before each mixer update, so
+    // Bones the reactions and poses touch go back to rest before each mixer update, so
     // a bone no clip animates (jaw, tail, hat) can't pile rotations up.
     /** @type {[THREE.Bone, THREE.Quaternion, THREE.Vector3][]} */
-    this._rest = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Neck1', 'Neck2', 'Neck3', 'Head', 'Jaw', 'Tail', 'HatSocket']
+    this._rest = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Neck1', 'Neck2', 'Neck3', 'Head', 'Jaw', 'Tail', 'HatSocket',
+      'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'LeftShoulder', 'RightShoulder']
       .filter((n) => this.bones[n]).map((n) => [this.bones[n], this.bones[n].quaternion.clone(), this.bones[n].position.clone()]);
     this._modelScale = this.model.scale.clone();
     this._modelY = this.model.position.y;
@@ -302,6 +339,9 @@ export class Goose {
     this.root.updateMatrixWorld(true);
     const ank = (n) => this.root.worldToLocal(b[n].getWorldPosition(new THREE.Vector3()));
     this._ankle = { L: ank('LeftFoot'), R: ank('RightFoot') };
+    // Leg length against the young geese's (hips ≈ 0.775 m): short legs get a
+    // proportionally shallower crouch and a shorter stance.
+    this._legK = THREE.MathUtils.clamp(b.Hips ? b.Hips.getWorldPosition(new THREE.Vector3()).y / 0.775 : 1, 0.5, 1.2);
     this._footLen = b.LeftToeBase ? b.LeftFoot.getWorldPosition(new THREE.Vector3()).distanceTo(b.LeftToeBase.getWorldPosition(new THREE.Vector3())) : 0.12;
     /** @type {[THREE.Bone, number][]} cloth panels (coat tails, skirts) and how much each swings */
     this._cloth = [];
@@ -332,43 +372,14 @@ export class Goose {
      * camera is on (+1 its left, −1 its right): it stands open to it.
      */
     this.saw = { w: 0, shift: 0, effort: 0, tug: 0, open: 1 };
+    /**
+     * Sitting (Grandpa in his rocking chair), set by its owner. w: blend.
+     * hipY/hipZ: where the hip joint sits, root frame (m). footZ: how far
+     * forward the feet rest. recline: pelvis tipped back (rad).
+     */
+    this.sit = { w: 0, hipY: 0.42, hipZ: -0.02, footZ: 0.3, recline: 0.2 };
     this._sawSt = { vel: 0, last: 0, yaw: 0, t: Math.random() * 10, cloth: new Spring(1.9, 0.22), wag: new Spring(2.6, 0.3) };
 
-    if (id === 'grandma') this._dressGrandma();
-  }
-
-  /** Small cheap tweaks so the Georgian goose reads as Grandma: round spectacles and a warm shawl tint. */
-  _dressGrandma() {
-    // Gold spectacles. A goose's eyes are on the sides of its head, so each
-    // lens sits over its own eye, facing out (a pair of side lenses, like
-    // pince-nez), found from the eye bones in the rest pose.
-    const head = this.bones.Head, eyes = [this.bones.LeftEye, this.bones.RightEye];
-    if (head && eyes[0] && eyes[1]) {
-      this.root.updateMatrixWorld(true);
-      const mat = new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.85, roughness: 0.3 });
-      const ring = new THREE.TorusGeometry(0.021, 0.003, 6, 20);
-      const hs = head.getWorldScale(new THREE.Vector3()).x;
-      const pL = eyes[0].getWorldPosition(new THREE.Vector3()), pR = eyes[1].getWorldPosition(new THREE.Vector3());
-      const mid = pL.clone().add(pR).multiplyScalar(0.5);
-      for (const p of [pL, pR]) {
-        const out = p.clone().sub(mid).normalize();
-        const at = p.clone().addScaledVector(out, 0.026);
-        const lens = new THREE.Mesh(ring, mat);
-        head.add(lens);
-        lens.position.copy(head.worldToLocal(at.clone()));
-        // Face the ring (its +z) outward, in head space.
-        const hq = head.getWorldQuaternion(new THREE.Quaternion()).invert();
-        lens.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), out.clone().applyQuaternion(hq).normalize());
-        lens.scale.setScalar(1 / hs);
-      }
-    }
-    // Warm the jacket's blue toward a heathery shawl.
-    this.model.traverse((o) => {
-      const m = /** @type {any} */ (o).material;
-      if (m && m.color && /jacket|bowtie|cuffs|hat/.test(m.name || '')) {
-        m.color.lerp(new THREE.Color(0x8a5a7a), 0.55);
-      }
-    });
   }
 
   /** @param {string} name @param {{fade?:number, once?:boolean, timeScale?:number}} [o] */
@@ -403,6 +414,7 @@ export class Goose {
     if (nk) nk.rotation.x += this.bob * 0.05;
     this._applyReactions(dt);
     this._sawPose(dt);
+    this._sitPose();
     this.root.updateMatrixWorld(true);
     const w = this.ikWeight;
     if (w <= 0.001) return;
@@ -444,7 +456,7 @@ export class Goose {
     // Hips: forward and back with the stroke, sitting down into the knees,
     // lowest at the ends of the stroke (weight on one leg), a strain tremble.
     const tremble = eff > 0.5 ? Math.sin(st.t * 47) * 0.004 * (eff - 0.5) * 2 : 0;
-    const drop = 0.06 + 0.018 * u * u + 0.035 * eff + tremble;
+    const drop = (0.06 + 0.018 * u * u + 0.035 * eff) * this._legK * this._legK + tremble;
     const off = new THREE.Vector3(0.012 * S.open * u, -drop, sh).multiplyScalar(w).applyQuaternion(rq);
     const hp = b.Hips.getWorldPosition(new THREE.Vector3()).add(off);
     if (b.Hips.parent) b.Hips.position.copy(b.Hips.parent.worldToLocal(hp));
@@ -490,7 +502,7 @@ export class Goose {
       const a0 = this._ankle[side];
       // Heel up on the back foot as the weight goes forward; the front toe
       // lifts a touch as they sit back.
-      const k = this._skirt ? 0.5 : 1;
+      const k = (this._skirt ? 0.5 : 1) * this._legK;
       const heel = (isBack ? Math.max(0, u) * 0.38 : -Math.max(0, -u) * 0.12) * (this._skirt ? 0.6 : 1);
       const toeOut = out * (isBack ? 0.42 : 0.12) * (this._skirt ? 0.6 : 1);
       const tgt = new THREE.Vector3(a0.x + out * (isBack ? 0.07 : 0.045) * k, a0.y, a0.z + (isBack ? -0.17 : 0.11) * k);
@@ -523,6 +535,49 @@ export class Goose {
     st.wag.target = -yaw * 1.6;
     st.wag.step(dt);
     rotateInRoot(b.Tail, root, 0, 1, 0, st.wag.x * w);
+  }
+
+  /** Seated: the hips on the chair seat, thighs forward, feet flat on the floor in front. */
+  _sitPose() {
+    const S = this.sit, b = this.bones, root = this.root, w = S.w;
+    if (w < 0.001 || !b.Hips) return;
+    root.updateMatrixWorld(true);
+    const rq = root.getWorldQuaternion(new THREE.Quaternion());
+    const rqi = rq.clone().invert();
+    const footRel = {
+      L: rqi.clone().multiply(b.LeftFoot.getWorldQuaternion(new THREE.Quaternion())),
+      R: rqi.clone().multiply(b.RightFoot.getWorldQuaternion(new THREE.Quaternion())),
+    };
+    // The hip joints' midpoint is a little below the Hips bone: move the
+    // bone so the joints land on the seat.
+    const hipsW = b.Hips.getWorldPosition(new THREE.Vector3());
+    const jointMid = b.LeftUpLeg.getWorldPosition(new THREE.Vector3()).add(b.RightUpLeg.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+    const want = root.localToWorld(new THREE.Vector3(0, S.hipY, S.hipZ)).add(hipsW.clone().sub(jointMid));
+    hipsW.lerp(want, w);
+    if (b.Hips.parent) b.Hips.position.copy(b.Hips.parent.worldToLocal(hipsW));
+    b.Hips.updateMatrixWorld(true);
+    // Settled back into the chair; the spine curls forward again over the belly.
+    rotateInRoot(b.Hips, root, 1, 0, 0, -S.recline * w);
+    rotateInRoot(b.Spine1, root, 1, 0, 0, S.recline * 0.45 * w);
+    rotateInRoot(b.Spine2, root, 1, 0, 0, S.recline * 0.35 * w);
+    for (const side of /** @type {const} */ (['L', 'R'])) {
+      const leg = side === 'L' ? this.legL : this.legR;
+      const foot = side === 'L' ? b.LeftFoot : b.RightFoot;
+      const hip = side === 'L' ? b.LeftUpLeg : b.RightUpLeg;
+      if (!leg || !foot || !hip) continue;
+      const out = side === 'L' ? 1 : -1;
+      const a0 = this._ankle[side];
+      const T = root.localToWorld(new THREE.Vector3(a0.x + out * 0.03, a0.y, S.footZ));
+      // Knees up and forward, a touch apart.
+      const pole = hip.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(out * 0.25, 0.5, 1).applyQuaternion(rq));
+      const cur = foot.getWorldPosition(new THREE.Vector3());
+      leg.solve(cur.lerp(T, w), pole, 1);
+      const fq = rq.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), out * 0.25)).multiply(footRel[side]);
+      const nowF = foot.getWorldQuaternion(new THREE.Quaternion()).slerp(fq, w);
+      const pq = (foot.parent || root).getWorldQuaternion(new THREE.Quaternion()).invert();
+      foot.quaternion.copy(pq.multiply(nowF));
+      foot.updateMatrixWorld(true);
+    }
   }
 
   /** Knock the hat up off the head; it falls back under gravity and bounces once. @param {number} v m/s */
@@ -597,7 +652,5 @@ export async function loadGoose(id) {
   // Each Goose needs its own copy of the skinned scene.
   const { clone } = await import('three/addons/utils/SkeletonUtils.js');
   const scene = clone(g.scene);
-  // Materials are shared by the cache: give Grandma her own so her tint stays hers.
-  if (id === 'grandma') scene.traverse((o) => { const m = /** @type {any} */ (o); if (m.isMesh) m.material = m.material.clone(); });
-  return new Goose(id, { scene, animations: g.animations }, c);
+  return new Goose(id, { scene, animations: g.animations }, c, !!f.retarget);
 }
