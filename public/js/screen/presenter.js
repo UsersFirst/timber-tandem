@@ -107,6 +107,8 @@ export class Presenter {
         {
           const g = this.cast.A === 'grandma' ? 'A' : this.cast.B === 'grandma' ? 'B' : null;
           if (g && ev.blame !== g) setTimeout(() => a.play('tut', { pan: pan(g), gain: 0.8 }), 520);
+          // Watching from beside Grandpa's chair (screen left), she tuts too.
+          if (!g && sc) setTimeout(() => a.play('tut', { pan: -0.6, gain: 0.55 }), 650);
         }
         break;
       case 'chatter': sc?.chatter(); a.play('chatter'); break;
@@ -129,6 +131,12 @@ export class Presenter {
         break;
       case 'caption':
         if (ev.who === 'Grandma' && /privy|Temper/.test(ev.text)) a.play('tut');
+        if (ev.who === 'Grandma') sc?.speak('grandma', Math.min(2.6, (ev.holdMs || 3000) / 1000 * 0.7));
+        break;
+      case 'gp':
+        // Grandpa's speech bubble, over his head (placed each frame).
+        this.hud.grandpaSay(ev.text, ev.holdMs);
+        sc?.speak('grandpa', Math.min(3.5, ev.holdMs / 1000 * 0.6));
         break;
       case 'ui': a.play(ev.sfx); break;
       default:
@@ -156,6 +164,7 @@ export class Presenter {
       const level = v.phase === 'saw' ? (v.streak >= 12 ? 3 : v.streak >= 7 ? 2 : v.streak >= 3 ? 1 : 0) : v.phase === 'notch' ? 1 : 0;
       if (level !== this.intensity && v.song && !v.silentSong) { this.intensity = level; this.audio.setIntensity(/** @type {0|1|2|3} */ (level)); }
     }
+    this.hud.placeBubble(this.scene?.bubbleAnchor('grandpa') ?? null);
     this.hud.frame(v, nowH, dt);
   }
 }

@@ -137,6 +137,46 @@ export class Hud {
     this.captionTimer = /** @type {any} */ (setTimeout(() => el.classList.remove('show'), holdMs));
   }
 
+  /** Grandpa's speech bubble. @param {string} text @param {number} holdMs */
+  grandpaSay(text, holdMs) {
+    const el = $('gp-bubble');
+    $('gp-text').textContent = text;
+    el.classList.add('show');
+    clearTimeout(this.gpTimer);
+    this.gpTimer = /** @type {any} */ (setTimeout(() => el.classList.remove('show'), holdMs));
+  }
+
+  /**
+   * Keep the bubble over Grandpa's head; when he's out of the shot (or there's
+   * no 3D scene), it docks top left with its tail pointing off screen.
+   * @param {{x: number, y: number, on: boolean}|null} at screen px
+   */
+  placeBubble(at) {
+    const el = $('gp-bubble');
+    if (!el.classList.contains('show')) return;
+    const W = window.innerWidth, H = window.innerHeight;
+    const bw = el.offsetWidth, bh = el.offsetHeight;
+    // Over the score card he's hidden behind it: the bubble sits above the card.
+    const phase = document.documentElement.dataset.phase;
+    const top = phase === 'score' || phase === 'end';
+    const docked = !top && (!at || !at.on);
+    el.classList.toggle('docked', docked);
+    el.classList.toggle('over-card', top);
+    let x, y;
+    if (top) { x = (W - bw) / 2; y = 14; }
+    else if (docked) { x = 16; y = Math.min(H * 0.3, 150); }
+    else {
+      // The tail's tip sits on his head; the bubble leans right of it.
+      x = at.x - bw * 0.22;
+      y = at.y - bh - 18;
+    }
+    x = Math.max(12, Math.min(W - bw - 12, x));
+    y = Math.max(top ? 12 : 76, Math.min(H - bh - 12, y));
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    // The tail points at him even when the bubble is pushed off-centre.
+    if (!docked && !top && at) el.style.setProperty('--tail', Math.round(Math.max(18, Math.min(bw - 30, at.x - x))) + 'px');
+  }
+
   // ---------------- per frame ----------------
 
   /** @param {any} v the view @param {number} nowH host-clock now @param {number} dtMs */

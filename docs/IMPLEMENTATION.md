@@ -236,6 +236,34 @@ stroke from the game camera and two low close-ups.
   the tree goes, and throws his wings up with a honk when it lands. A privy
   smash gets a sorry head tilt instead.
 
+## Grandpa's tall tales and Grandma watching (2026-10-24)
+
+- **Speech bubble.** Grandpa talks in a cream bubble over his head (`#gp-bubble`,
+  `hud.grandpaSay` / `hud.placeBubble`), not the caption bar. The scene projects
+  his head to the screen each frame (`scene.bubbleAnchor`); when he's out of
+  shot the bubble docks top left, and over the score card it sits above the
+  card. His beak works while he talks (`Goose.talk`); so does Grandma's for
+  her captions.
+- **When he speaks** (`game.gp`, lines in `lines.js` `GRANDPA`): a word from the
+  chair once each tree's notch is under way; short heckles a second after
+  Grandma's line on a tantrum, a clang or chatter (some skipped, never over
+  himself); a cheer on long clean runs; "Here she comes!" as the tree goes; his
+  call on the landing; and one tall tale per tree over the score card. Some
+  tales get a reply from Grandma in the caption ("It was a bonfire, dear. And
+  a stool."). It's a host event (`{k:'gp'}`), so guest screens show it too.
+- **Grandma watching** (`WatchingGrandma`): whenever she isn't on the saw (any
+  two-player game), she stands side by side with Grandpa's chair, at his left
+  hand (x −2.3, z −1.6). His right is out of the saw shot. Hands folded; a slow
+  head shake and a tut at tantrums; hands to her cheeks as the tree goes; claps
+  when it lands. The hardest left fall of a small pine stops ≈0.5 m short of her
+  (`scripts/dev-fall-reach.mjs` measures it), and on falls well to the left she
+  flinches back.
+- **Fixed on the way:** the score card's scrim hid every caption over the card
+  (Grandma's landing and score lines too). Captions now sit above it, at the bottom.
+- Review tools: `scripts/dev-grandparents-shots.mjs` (stills; `SPOT=x,z` tries
+  another place for Grandma), `scripts/dev-grandpa-bubble.mjs` (the bubble in a
+  real bot game; `--solo`).
+
 ## Tests
 
 - **Unit:** saw model, stroke tracker (synthetic strokes, half strokes, noise, solo binds, waggle chatter), hatchet detector, notch, tree and steering, clock sync, protocol round-trips, relay routing, modes and menus.

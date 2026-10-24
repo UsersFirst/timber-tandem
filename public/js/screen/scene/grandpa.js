@@ -7,6 +7,8 @@
 // edge of the clearing, out of every fall's path. He rocks, follows the saw
 // with his head, shakes it at a tantrum, leans in when the tree goes, and
 // throws his wings up when it lands. Not a player.
+// He talks in a speech bubble (the game picks the lines; hud.js draws it).
+// Grandma watches beside him when she isn't on the saw (WatchingGrandma).
 // ============================================================
 
 import * as THREE from 'three';
@@ -191,4 +193,129 @@ export class Grandpa {
     g.ikWeight = 1;
     g.update(dt, hands);
   }
+}
+
+/**
+ * Where Grandma stands to watch when she isn't sawing: side by side with
+ * Grandpa's chair, at his left hand. (His right is out of the saw shot.) The
+ * hardest left fall of a small pine stops ≈0.5 m short of her (scripts/dev-fall-reach.mjs).
+ */
+export const GRANDMA_SPOT = { x: -2.3, z: -1.6 };
+
+/**
+ * Grandma watching from beside Grandpa's chair (the two-player games: the
+ * grandchildren have the saw). Hands folded, she tuts at tantrums, puts
+ * her hands to her cheeks as the tree goes and claps when it lands.
+ */
+export class WatchingGrandma {
+  /** @param {THREE.Scene} scene @param {(at: number, fn: () => void) => void} later run on the scene clock */
+  constructor(scene, later) {
+    this.later = later;
+    this.scene = scene;
+    this.group = new THREE.Group();
+    this.group.name = 'grandma-watching';
+    this.group.position.set(GRANDMA_SPOT.x, 0, GRANDMA_SPOT.z);
+    // Facing the same way as Grandpa, so they read as a pair.
+    this.group.rotation.y = Math.atan2(-0.4 - GRANDMA_SPOT.x, 1.4 - GRANDMA_SPOT.z);
+    this.group.visible = false;
+    scene.add(this.group);
+    /** @type {import('./geese.js').Goose|null} */
+    this.goose = null;
+    /** @type {Promise<boolean>|null} */
+    this.ready = null;
+    this.on = false;
+    this.t = 0;
+    this.clapUntil = -1;
+    /** Hands up to the cheeks (the fall). */
+    this.gasp = false;
+    this.hipY = 0.7;
+  }
+
+  /** Show her (load on first use) or hide her (she's on the saw). @param {boolean} on */
+  setOn(on) {
+    this.on = on;
+    this.group.visible = on;
+    if (on && !this.ready) {
+      this.ready = loadGoose('grandma').then((g) => {
+        this.goose = g;
+        g.play('idle', { fade: 0.2 });
+        this.group.add(g.root);
+        g.root.updateMatrixWorld(true);
+        const hips = g.bones.Hips;
+        if (hips) this.hipY = g.root.worldToLocal(hips.getWorldPosition(new THREE.Vector3())).y;
+        return true;
+      }).catch((err) => { console.warn('grandma watching', err); return false; });
+    }
+  }
+
+  /** A slow, disappointed head shake. */
+  tantrum() {
+    const g = this.goose;
+    if (!g || !this.on) return;
+    const R = g.react;
+    R.tilt.target = 0.12;
+    [0, 0.22, 0.44].forEach((t, i) => this.later(t, () => R.look.kick(i % 2 ? -3.5 : 3.5)));
+    this.later(0.9, () => { R.tilt.target = 0; });
+  }
+
+  /** @param {number} [deg] the fall's heading: well left (toward the chair) and she flinches back */
+  fallStarts(deg = 0) {
+    this.gasp = true;
+    const g = this.goose;
+    if (!g) return;
+    g.react.lean.target = -0.1;
+    if (deg < -15) this.later(0.9, () => { g.react.hop.kick(0.5); g.react.shove.kick(-0.9); g.react.lean.kick(-1.5); });
+  }
+
+  /** @param {number} now scene seconds @param {boolean} [bad] the privy */
+  landed(now, bad = false) {
+    const g = this.goose;
+    if (g) g.react.lean.target = 0;
+    if (bad) { if (g) g.react.tilt.target = 0.3; this.later(2.4, () => { this.gasp = false; if (g) g.react.tilt.target = 0; }); return; }
+    this.gasp = false;
+    this.clapUntil = now + 2;
+    if (g) g.react.hop.kick(0.35);
+  }
+
+  reset() {
+    this.gasp = false;
+    this.clapUntil = -1;
+    const g = this.goose;
+    if (g) { g.react.lean.target = 0; g.react.tilt.target = 0; }
+  }
+
+  /** @param {number} dt @param {number} now @param {THREE.Vector3} lookAt */
+  update(dt, now, lookAt) {
+    const g = this.goose;
+    if (!g || !this.on) return;
+    this.t += dt;
+    this.group.updateMatrixWorld(true);
+    const root = g.root;
+    const local = root.worldToLocal(_v.copy(lookAt));
+    g.react.look.target = THREE.MathUtils.clamp(Math.atan2(local.x, local.z), -1, 1) * 0.7;
+    const y = this.hipY;
+    let hands;
+    if (now < this.clapUntil) {
+      const o = 0.025 + 0.11 * Math.abs(Math.sin(this.t * 9));
+      hands = { left: root.localToWorld(new THREE.Vector3(o, y + 0.42, 0.26)), right: root.localToWorld(new THREE.Vector3(-o, y + 0.42, 0.26)) };
+    } else if (this.gasp) {
+      const head = g.bones.Head ? root.worldToLocal(g.bones.Head.getWorldPosition(new THREE.Vector3())) : new THREE.Vector3(0, y + 0.6, 0);
+      hands = { left: root.localToWorld(new THREE.Vector3(0.1, head.y - 0.06, head.z + 0.06)), right: root.localToWorld(new THREE.Vector3(-0.1, head.y - 0.06, head.z + 0.06)) };
+    } else {
+      hands = {
+        left: root.localToWorld(new THREE.Vector3(0.04, y + 0.1, 0.19)),
+        right: root.localToWorld(new THREE.Vector3(-0.04, y + 0.12, 0.2)),
+        poleL: root.localToWorld(new THREE.Vector3(0.6, y, -0.1)),
+        poleR: root.localToWorld(new THREE.Vector3(-0.6, y, -0.1)),
+      };
+    }
+    g.ikWeight = 1;
+    g.update(dt, hands);
+  }
+}
+
+/** A goose's head (world), a little above the crown: where a speech bubble points. @param {import('./geese.js').Goose|null} g @param {THREE.Vector3} out */
+export function headTop(g, out) {
+  if (!g?.bones.Head) return null;
+  return g.bones.Head.getWorldPosition(out).add(new THREE.Vector3(0, 0.28, 0));
 }
