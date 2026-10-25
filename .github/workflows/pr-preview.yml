@@ -1,7 +1,7 @@
 name: PR Preview
 
 # Every PR gets a playable preview on GitHub Pages:
-#   https://usersfirst.github.io/timber-tandem/pr-preview/pr-<N>/
+#   https://www.usersfirst.com/timber-tandem/pr-preview/pr-<N>/
 #   …/pr-preview/pr-<N>/version.json shows the commit and time.
 # Only the static site (public/) is previewed. Rooms use the live relay at
 # timber.housetandem.com (the Durable Object deploys with main, like
