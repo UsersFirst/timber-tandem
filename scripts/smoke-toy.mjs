@@ -4,7 +4,7 @@
 // ============================================================
 // Needs `npm run dev` (wrangler dev on :8787) running. Usage:
 //   node scripts/smoke-toy.mjs [scenario ...] [--base http://localhost:8787] [--shots]
-// Scenarios: bots, phones, reversed, lag, waggle, grandma, online, menus   (default: all)
+// Scenarios: bots, phones, reversed, lag, waggle, grandma, online, menus, menu-solo, menu-online, touch   (default: all)
 // Phones are real /phone/ pages driven by ?sim= (synthetic devicemotion
 // through the real stroke tracker, calibration, clock sync and relay).
 // ============================================================
@@ -17,7 +17,7 @@ const args = process.argv.slice(2);
 const base = (args.find((a, i) => args[i - 1] === '--base')) || 'http://localhost:8787';
 const shots = args.includes('--shots');
 const wanted = args.filter((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--base');
-const ALL = ['bots', 'phones', 'reversed', 'lag', 'waggle', 'grandma', 'online', 'menus', 'menu-solo', 'menu-online'];
+const ALL = ['bots', 'phones', 'reversed', 'lag', 'waggle', 'grandma', 'online', 'menus', 'menu-solo', 'menu-online', 'touch'];
 const scenarios = wanted.length ? wanted : ALL;
 const outDir = path.resolve('scripts/out');
 fs.mkdirSync(outDir, { recursive: true });
@@ -46,6 +46,75 @@ async function page(url, label, errors) {
   p.on('pageerror', (e) => errors.push(`[${label}] ${e.message}`));
   await p.goto(url, { waitUntil: 'domcontentloaded' });
   return p;
+}
+
+/** A phone held sideways: touch, mobile, landscape. */
+async function phonePage(url, label, errors, width = 844, height = 390) {
+  const p = await browser.newPage();
+  await p.setViewport({ width, height, isMobile: true, hasTouch: true, isLandscape: width > height });
+  p.on('console', (m) => { if (m.type() === 'error') errors.push(`[${label}] ${m.text()}`); });
+  p.on('pageerror', (e) => errors.push(`[${label}] ${e.message}`));
+  await p.goto(url, { waitUntil: 'domcontentloaded' });
+  return p;
+}
+
+/** A real touch tap on an element's centre. */
+async function touchTap(p, sel) {
+  await p.bringToFront();
+  await p.waitForSelector(sel, { visible: true, timeout: 10000 });
+  const b = await (await p.$(sel)).boundingBox();
+  await p.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+}
+
+/**
+ * Plays the touch pads from inside the page, as thumbs would: chop on your
+ * turn; on the saw, hold from Grandma's beat to yours and let go; steer by
+ * holding the knob against the tree's pull. Pointer events on the real pads.
+ */
+function touchDriver() {
+  const w = /** @type {any} */ (window);
+  const g = w.__game;
+  const saw = document.getElementById('tp-saw');
+  const steer = document.getElementById('tp-steer');
+  const track = steer.querySelector('.tp-track');
+  const ev = (el, type, x, y, id) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y }));
+  const centre = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  const st = w.__touchStats = { coachSeen: false, coachGone: false, maxPull: 0, chops: 0, holds: 0, steerOn: 0, steerFrames: 0 };
+  let sawHeld = false, steerHeld = false, lastChop = 0;
+  const tick = () => {
+    const v = g.view;
+    if (!v) return requestAnimationFrame(tick);
+    const now = performance.now();
+    if (v.phase === 'notch' && v.litFace === 'A' && now - lastChop > 450) {
+      const [x, y] = centre(saw);
+      ev(saw, 'pointerdown', x, y, 1); ev(saw, 'pointerup', x, y, 1);
+      lastChop = now; st.chops++;
+    }
+    if (v.phase === 'saw' && v.song) {
+      const beatMs = 60000 / v.song.bpm;
+      const bp = (now - v.song.startH) / beatMs;
+      const hold = bp >= 0 && Math.floor(bp) % 2 === 0;
+      const [x, y] = centre(saw);
+      if (hold && !sawHeld) { ev(saw, 'pointerdown', x, y, 1); sawHeld = true; st.holds++; }
+      if (!hold && sawHeld) { ev(saw, 'pointerup', x, y, 1); sawHeld = false; }
+      // Steer: the thumb sits at target − pull (a player correcting as it drifts).
+      const r = track.getBoundingClientRect();
+      const thumb = Math.max(-1, Math.min(1, v.targetDeg / 25 - (g.pullNow || 0)));
+      const tx = r.left + ((thumb + 1) / 2) * r.width, ty = r.top + r.height / 2;
+      if (!v.coach) {
+        if (!steerHeld) { ev(steer, 'pointerdown', tx, ty, 2); steerHeld = true; } else ev(steer, 'pointermove', tx, ty, 2);
+        st.steerFrames++; if (v.aimGrade === 'skid') st.steerOn++;
+      }
+      if (v.coach) st.coachSeen = true; else if (st.coachSeen) st.coachGone = true;
+      st.maxPull = Math.max(st.maxPull, Math.abs(g.pullNow || 0));
+    } else {
+      if (v.phase === 'fall' && !st.fall) st.fall = { recent: g.cut.recent, angle: v.fallPreview, target: v.targetDeg, roll: v.rolls.A, pull: g.pullNow, thumb: g.seats.A.keys.thumb };
+      if (sawHeld) { const [x, y] = centre(saw); ev(saw, 'pointerup', x, y, 1); sawHeld = false; }
+      if (steerHeld) { ev(steer, 'pointerup', 0, 0, 2); steerHeld = false; }
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 /** Poll a page expression until truthy. */
@@ -314,6 +383,52 @@ async function run(name) {
       await tapOn(host, '[data-title="solo"]');
       await waitFor(guest, () => window.__guest.notice.ended && document.getElementById('notice-title').textContent.includes('over'), { label: 'guest told it ended' });
       check(await host.evaluate(() => window.__game.guests.size === 0 && !window.__game.inviteOpen), 'leaving online closes the invite and lets the guest go; the guest is told');
+    }
+
+    if (name === 'touch') {
+      // Solo on just a phone held sideways: the menu, real taps, the pads.
+      const host = await phonePage(`${base}/?touch${shots ? '' : '&noscene'}`, 'phone', errors); pages.push(host);
+      await waitFor(host, () => !document.getElementById('title').hidden, { label: 'main menu' });
+      const menu = await host.evaluate(() => ({ solo: document.querySelector('[data-title="solo"]').label, couch: document.querySelector('[data-title="couch"]').disabled }));
+      check(menu.solo === 'Solo — on this phone' && menu.couch, `the phone's menu: "${menu.solo}", Two players greyed out`);
+      await touchTap(host, '[data-title="solo"]');
+      await waitFor(host, () => window.__game?.phase === 'intro', { timeout: 20000, label: 'straight to the cold open' });
+      const st0 = await host.evaluate(() => ({ touch: document.documentElement.hasAttribute('data-touch'), a: window.__game.seats.A.kind, t: window.__game.seats.A.keys.touch, b: window.__game.seats.B.kind }));
+      check(st0.touch && st0.a === 'keys' && st0.t && st0.b === 'grandma', 'one tap on Solo: no lobby, no safety card — thumbs on the left handle, Grandma on the right');
+      await host.evaluate(`(${touchDriver.toString()})()`);
+      await touchTap(host, '#intro-skip');
+      await waitFor(host, () => window.__game.phase === 'saw', { timeout: 60000, label: 'notch by touch' });
+      check(await host.evaluate(() => window.__touchStats.chops > 0), 'the hatchet pad chops on your turn');
+      if (shots) { await sleep(2500); await host.screenshot({ path: path.join(outDir, 'smoke-touch-coach.png') }); }
+      await waitFor(host, () => window.__touchStats.coachGone, { timeout: 30000, label: 'coach' });
+      if (shots) { await sleep(6000); await host.screenshot({ path: path.join(outDir, 'smoke-touch-saw.png') }); }
+      await waitFor(host, () => window.__game.phase === 'score', { timeout: 120000, label: 'the tree falls' });
+      const sc = await host.evaluate(() => window.__game.scores[window.__game.scores.length - 1]);
+      const ts = await host.evaluate(() => window.__touchStats);
+      check(ts.coachSeen && ts.coachGone, 'the first-strokes coach shows, then goes');
+      check(sc.temper >= 90, `a tree felled by thumbs: temper ${sc.temper}, tantrums ${sc.tantrums}`);
+      check(ts.maxPull >= 0.2, `the tree pulls (up to ${ts.maxPull.toFixed(2)}) and the thumb holds against it: on target ${Math.round((100 * ts.steerOn) / Math.max(1, ts.steerFrames))}% of the time, landed ${sc.landing?.grade ?? sc.grade ?? '?'}`);
+      // A short screen (small iPhone sideways, Safari bars): nothing overlaps or spills.
+      for (const [w, h] of [[844, 390], [667, 320]]) {
+        await host.setViewport({ width: w, height: h, isMobile: true, hasTouch: true, isLandscape: true });
+        await host.evaluate(() => { const g = window.__game; g.view = { ...g.view }; });
+        await sleep(400);
+        const lay = await host.evaluate(() => {
+          const box = (s) => { const el = document.querySelector(s); const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+          return { saw: box('#tp-saw'), steer: box('#tp-steer'), strip: box('#hud .bottom'), W: innerWidth, H: innerHeight };
+        });
+        const inside = (b) => b.l >= 0 && b.t >= 0 && b.r <= lay.W && b.b <= lay.H;
+        const apart = (a, b) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
+        check(inside(lay.saw) && inside(lay.steer) && apart(lay.saw, lay.steer) && apart(lay.strip, lay.saw) && apart(lay.strip, lay.steer), `${w}×${h}: pads on screen, apart, clear of the top strip`);
+      }
+      // Held upright mid-game: the rotate card, and the game pauses.
+      await host.evaluate(() => window.__game.next());
+      await waitFor(host, () => ['notch', 'intro'].includes(window.__game.phase), { timeout: 20000, label: 'next tree' });
+      await host.evaluate(() => window.__game.skipIntro?.());
+      await waitFor(host, () => window.__game.phase === 'notch', { timeout: 20000, label: 'next notch' });
+      await host.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, isLandscape: false });
+      await waitFor(host, () => getComputedStyle(document.getElementById('rotate')).display !== 'none' && window.__game.held, { timeout: 5000, label: 'rotate card' });
+      check(true, 'held upright mid-game: "Turn your phone sideways", and the game pauses');
     }
 
     if (name === 'grandma') {

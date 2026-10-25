@@ -197,6 +197,71 @@
   html[data-noscene] body { background: radial-gradient(ellipse at 50% 70%, #3d2a18, #140d09); }
   @media (max-width: 760px) { #lobby-seats { grid-template-columns: 1fr; } .score-stats { grid-template-columns: 1fr; } }
   .build { margin-top: 10px; font: 11px ui-monospace, monospace; opacity: .45; }
+
+  /* ---------- touch solo: play on just your phone (docs/TOUCH-SOLO.md) ---------- */
+  html[data-touch] { --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --sb: env(safe-area-inset-bottom, 0px); --pad: clamp(120px, 40vh, 190px); }
+  html[data-touch], html[data-touch] body { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #touch { position: fixed; inset: 0; z-index: 18; pointer-events: none; }
+  #touch[hidden], #touch [hidden] { display: none !important; }
+  .tp-pad { position: absolute; bottom: calc(8px + var(--sb)); pointer-events: auto; touch-action: none; border-radius: 22px; color: #f6ead8; text-align: center; transition: opacity .2s, border-color .15s, box-shadow .15s; }
+  #touch:not(.live) .tp-pad { opacity: .45; pointer-events: none; }
+  #tp-saw { left: calc(10px + var(--sl)); width: calc(var(--pad) * 1.18); height: var(--pad); background: rgba(232,116,59,.22); border: 3px solid #e8743b; box-shadow: inset 0 0 30px rgba(232,116,59,.25); display: grid; align-content: center; justify-items: center; gap: 2px; }
+  #tp-saw.down { background: rgba(232,116,59,.42); }
+  #tp-saw.hold-now { border-color: #ffd2b8; }
+  #tp-saw.lit { box-shadow: 0 0 0 4px rgba(255,255,255,.5), 0 0 24px rgba(232,116,59,.8); }
+  #tp-saw.dim { opacity: .5; }
+  .tp-ring { position: absolute; left: -8px; top: -8px; width: calc(100% + 16px); height: calc(100% + 16px); overflow: visible; pointer-events: none; }
+  .tp-ring rect { fill: none; stroke: #fff; stroke-width: 5px; stroke-linecap: round; stroke-dasharray: 0 100; }
+  .tp-glyph { width: clamp(30px, 9vh, 46px); height: clamp(30px, 9vh, 46px); border-radius: 12px; background: #e8743b; color: #fff; font: 900 clamp(18px, 5.5vh, 26px) Georgia, serif; display: grid; place-items: center; }
+  .tp-big { font: 900 clamp(17px, 5.6vh, 24px) system-ui, sans-serif; letter-spacing: .02em; }
+  .tp-sub { font-size: clamp(10px, 3vh, 13px); opacity: .85; }
+  #tp-steer { right: calc(10px + var(--sr)); width: calc(var(--pad) * 1.45); height: calc(var(--pad) * .66); background: rgba(27,20,16,.72); border: 3px solid rgba(255,255,255,.25); }
+  #tp-steer.down { border-color: rgba(255,255,255,.55); }
+  #tp-steer.on { border-color: #7bd36b; box-shadow: 0 0 16px rgba(123,211,107,.6); }
+  #tp-steer.privy { border-color: #e5484d; }
+  #tp-steer.dim { opacity: .4; }
+  .tp-lbl { position: absolute; left: 0; right: 0; top: 6px; font-size: clamp(9px, 2.8vh, 11px); letter-spacing: .1em; font-weight: 800; color: #f0c060; }
+  .tp-track { position: absolute; left: 18px; right: 18px; top: 50%; height: 10px; margin-top: -5px; border-radius: 5px; background: rgba(255,255,255,.22); }
+  .tp-privy { position: absolute; top: 0; bottom: 0; right: 0; border-radius: 0 5px 5px 0; background: rgba(229,72,77,.85); }
+  .tp-band { position: absolute; top: -22px; height: 54px; width: 34px; margin-left: -17px; border-radius: 8px; background: rgba(123,211,107,.28); border: 2px solid #7bd36b; box-sizing: border-box; }
+  .tp-knob { position: absolute; top: -13px; width: 36px; height: 36px; margin-left: -18px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.5); transition: left .05s linear; }
+  .tp-pullarrow { position: absolute; left: 14px; right: 14px; bottom: 22px; font-size: 10px; font-weight: 800; color: #ff9a6a; letter-spacing: .06em; }
+  .tp-ends { position: absolute; left: 12px; right: 12px; bottom: 6px; display: flex; justify-content: space-between; font-size: 10px; opacity: .75; }
+  #tp-coach { position: absolute; left: calc(24px + var(--sl) + var(--pad) * 1.18); right: calc(24px + var(--sr) + var(--pad) * 1.45); bottom: calc(14px + var(--sb) + var(--pad) * .5); font: 800 clamp(14px, 4.6vh, 18px) system-ui; text-align: center; text-shadow: 0 2px 6px #000; }
+  #tp-coach span { color: #6fb3ff; }
+  #tp-coach small { display: block; font-weight: 600; opacity: .85; font-size: .8em; }
+
+  /* The TV HUD, folded to a strip at the top for a phone. */
+  html[data-touch] .bottom { top: calc(6px + env(safe-area-inset-top, 0px)); bottom: auto; width: min(46vw, 420px); grid-template-columns: 1fr 14px; gap: 6px; }
+  html[data-touch] .gauge { padding: 4px 8px 2px; border-radius: 14px; }
+  html[data-touch] #blade { height: clamp(44px, 15vh, 70px); }
+  html[data-touch] #hands { display: none !important; }
+  html[data-touch] #beats { height: clamp(26px, 9vh, 40px); margin-top: 0; }
+  html[data-touch] .cut { height: auto; border-radius: 7px; }
+  html[data-touch] #cut-label { display: none; }
+  html[data-touch] .dial { display: none !important; }
+  html[data-touch] .top { top: calc(6px + env(safe-area-inset-top, 0px)); left: calc(92px + var(--sl)); right: calc(10px + var(--sr)); }
+  html[data-touch] #tree-name { font-size: 13px; }
+  html[data-touch] #turn, html[data-touch] #streak { font-size: 12px; }
+  html[data-touch] .temper { min-width: 0; padding: 5px 10px; border-radius: 12px; }
+  html[data-touch] .temper .num { font-size: 22px; }
+  html[data-touch] .temper .lbl, html[data-touch] .temper .tan { font-size: 10px; }
+  html[data-touch] .temper .bar { display: none; }
+  html[data-touch] #pause-btn { left: calc(8px + var(--sl)); top: calc(6px + env(safe-area-inset-top, 0px)); }
+  html[data-touch] #caption { bottom: auto; top: calc(14px + clamp(44px, 15vh, 70px) + clamp(22px, 8vh, 36px)); max-width: 56vw; padding: 6px 12px; border-radius: 12px; }
+  html[data-touch] #caption-text { font-size: clamp(13px, 4.2vh, 17px); }
+  html[data-touch] #caption-who { font-size: 10px; }
+  html[data-touch] .toast { font-size: clamp(26px, 9vh, 40px) !important; top: 44% !important; }
+  html[data-touch]:is([data-phase="score"], [data-phase="end"]) #caption { top: auto; bottom: 10px; }
+  /* Very short screens: smaller captions. */
+  @media (max-height: 340px) { html[data-touch] #caption-text { font-size: 13px; } }
+
+  /* Held upright mid-game. */
+  #rotate { position: fixed; inset: 0; z-index: 80; display: none; place-content: center; text-align: center; gap: 14px; padding: 24px; background: radial-gradient(ellipse at 50% 30%, #3d2a18, #140d09); color: #f6ead8; }
+  #rotate b { font: 900 24px system-ui, sans-serif; }
+  #rotate .ph { width: 56px; height: 96px; border: 4px solid #fff; border-radius: 12px; margin: 10px auto 0; animation: rot 2.4s ease-in-out infinite; }
+  @keyframes rot { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) { html[data-touch]:not([data-phase="title"]) #rotate { display: grid; } }
 </style>
 </head>
 <body>
@@ -331,6 +396,7 @@
   <div id="paused" hidden>Hold up… a phone dropped out. Old Misery waits.</div>
   <uf-button id="intro-skip" data-action="skip-intro" label="Skip" variant="ghost" size="sm" hidden></uf-button>
   <div id="net"></div>
+  <div id="rotate" aria-live="polite"><b>Turn your phone sideways</b><div>Grandma’s already holding her end.</div><div class="ph"></div></div>
   <uf-button class="spike" data-action="spike-dl" label="Download spike log" variant="ghost" size="xs"></uf-button>
 
   <!-- Score + end -->
