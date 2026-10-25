@@ -23,7 +23,7 @@ import { Saw, makeHatchet, BLADE_L, TRAVEL } from './scene/saw.js';
 import { loadGoose } from './scene/geese.js';
 import { Fx } from './scene/fx.js';
 import { TantrumFx, geeseTantrum } from './scene/tantrum.js';
-import { Grandpa } from './scene/grandpa.js';
+import { Grandpa, WatchingGrandma, headTop } from './scene/grandpa.js';
 
 /**
  * @typedef {object} SceneView
@@ -80,6 +80,8 @@ export async function createScene(canvas, opts = {}) {
   const tfx = new TantrumFx(scene);
   // Grandpa watches from his rocking chair (loads after the cast; not a player).
   const grandpa = new Grandpa(scene, (at, fn) => later(at, fn));
+  // Grandma watches beside him whenever she isn't on the saw.
+  const nana = new WatchingGrandma(scene, (at, fn) => later(at, fn));
 
   // Seat rings on the ground (who is who; brighten on your notch turn).
   /** @type {Record<'A'|'B', THREE.Mesh>} */
@@ -333,6 +335,7 @@ export async function createScene(canvas, opts = {}) {
           emit('sound', { name: 'boom' });
           emit('land', { grade: fallGrade });
           grandpa.landed(time, fallGrade === 'privy');
+          nana.landed(time, fallGrade === 'privy');
           if (grandpa.goose && fallGrade !== 'privy') emit('sound', { name: 'honk', gain: 0.45, delay: 0.25, pan: -0.6 });
         } else emit('sound', { name: 'thud', gain: 0.45 });
       }
@@ -442,6 +445,7 @@ export async function createScene(canvas, opts = {}) {
     // Grandpa watches the falling tree, or else the saw.
     const watchAt = tree.falling && !tree.landed ? tree.trunkPoints(9)[5] : _watch.set(saw.group.position.x, CUT_Y + 0.2, saw.group.position.z);
     grandpa.update(dt, time, watchAt);
+    nana.update(dt, time, watchAt);
     fx.update(dt);
     tfx.update(dt);
     env.update(dt);
@@ -481,6 +485,14 @@ export async function createScene(canvas, opts = {}) {
     return a + d * (1 - Math.exp(-lambda * dt));
   }
 
+  /** The goose who says a line: Grandpa, or Grandma (watching, or on the saw). @param {'grandpa'|'grandma'} who */
+  function speaker(who) {
+    if (who === 'grandpa') return grandpa.goose;
+    if (nana.on) return nana.goose;
+    return castIds.A === 'grandma' ? geese.A : castIds.B === 'grandma' ? geese.B : null;
+  }
+  const _anchor = new THREE.Vector3();
+
   /** Run fn this many scene seconds from now. @param {number} at @param {() => void} fn */
   function later(at, fn) { cues.push({ t: time + at, fn }); }
 
@@ -498,6 +510,7 @@ export async function createScene(canvas, opts = {}) {
     // with two geese.
     setCast(cast) {
       wantedCast = { ...cast };
+      nana.setOn(cast.A !== 'grandma' && cast.B !== 'grandma');
       castQueue = castQueue.then(async () => {
         for (const seat of /** @type {const} */ (['A', 'B'])) {
           const id = wantedCast[seat];
@@ -517,6 +530,7 @@ export async function createScene(canvas, opts = {}) {
     },
     setTree(def) {
       grandpa.reset();
+      nana.reset();
       tree.build(def.kind, def.targetDeg);
       celebrating = false;
       for (const seat of /** @type {const} */ (['A', 'B'])) chop[seat] = null;
@@ -531,6 +545,7 @@ export async function createScene(canvas, opts = {}) {
     tantrum(blame, kind = 'push') {
       // Grandpa shakes his head and heckles from the chair (he sits on the left).
       later(0.3, () => grandpa.tantrum());
+      if (nana.on) later(0.5, () => nana.tantrum());
       if (grandpa.goose) emit('sound', { name: 'honk', gain: 0.35, delay: 0.42, pan: -0.6 });
       const small = time - lastTantrum < 2.5;
       lastTantrum = time;
@@ -565,6 +580,7 @@ export async function createScene(canvas, opts = {}) {
     chatter() { saw.chatter(); },
     fall(angleDeg, grade) {
       later(0.6, () => grandpa.fallStarts());
+      later(0.8, () => nana.fallStarts(angleDeg));
       return new Promise((resolve) => {
         tree.startFall(angleDeg);
         tree.bounced = false;
@@ -584,6 +600,20 @@ export async function createScene(canvas, opts = {}) {
       });
     },
     celebrate() { celebrating = true; },
+    speak(who, sec) {
+      const g = speaker(who);
+      if (g) { g.talk = sec; g._talkT = 0; }
+    },
+    bubbleAnchor(who) {
+      const g = speaker(who);
+      const p = g ? headTop(g, _anchor) : null;
+      if (!p) return null;
+      p.project(camera);
+      const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+      let x = (p.x * 0.5 + 0.5) * w;
+      if (cam.mode === 'notch') x = w - x; // the notch shot is mirrored
+      return { x, y: (-p.y * 0.5 + 0.5) * h, on: p.z < 1 && p.x > -1.05 && p.x < 1.05 && p.y > -1.05 && p.y < 1.05 };
+    },
     setCamera,
     /** Scene events for the presenter: 'sound' {name, gain?, delay?}, 'voice' {creak, rush, slow}, 'slowmo' {on}, 'land' {grade}. @param {(kind: string, data: any) => void} fn */
     onEvent(fn) { listener = fn; },
@@ -597,7 +627,7 @@ export async function createScene(canvas, opts = {}) {
     get _debug() {
       /** Park the camera (dev captures). @param {number[]} pos @param {number[]} at @param {number} fov */
       const lockCam = (pos, at, fov) => { camGoal.pos.set(pos[0], pos[1], pos[2]); camGoal.at.set(at[0], at[1], at[2]); camGoal.fov = fov; cam.pos.copy(camGoal.pos); cam.at.copy(camGoal.at); cam.fov = fov; };
-      return { scene, camera, renderer, geese, saw, tree, fx, tfx, lockCam, grandpa };
+      return { scene, camera, renderer, geese, saw, tree, fx, tfx, lockCam, grandpa, nana };
     },
     dispose() {
       renderer.dispose();
@@ -621,6 +651,8 @@ export async function createScene(canvas, opts = {}) {
  * @property {() => void} chatter
  * @property {(angleDeg: number, grade?: string) => Promise<void>} fall
  * @property {() => void} celebrate
+ * @property {(who: 'grandpa'|'grandma', sec: number) => void} speak  work the beak while a line is up
+ * @property {(who: 'grandpa'|'grandma') => {x: number, y: number, on: boolean}|null} bubbleAnchor  screen px above the head
  * @property {(mode: 'intro'|'notch'|'saw'|'wide'|'skid') => void} setCamera
  * @property {(w: number, h: number) => void} resize
  * @property {{drawCalls: number, triangles: number}} info

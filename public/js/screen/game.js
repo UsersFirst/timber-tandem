@@ -16,7 +16,7 @@ import { TREES, createCut, cutBite, fallAngle, cutFrac, landing, steerLean } fro
 import { lagToBeat, songTempo, pullParity } from '../core/calibration.js';
 import { SEATS } from '../core/protocol.js';
 import { menuFor, isMode, seatBChangesHome, remoteMenu, hostOnly } from '../core/modes.js';
-import { LinePicker, LINES } from './lines.js';
+import { LinePicker, LINES, GrandpaPicker } from './lines.js';
 import { SpikeStore } from './spike-store.js';
 
 /** @typedef {'A'|'B'} SeatId */
@@ -69,6 +69,9 @@ export class Game {
     this.emitLocal = o.emit;
     this.params = o.params;
     this.lines = new LinePicker();
+    this.gpLines = new GrandpaPicker();
+    /** Grandpa keeps quiet until then (ms), so he never talks over himself. */
+    this.gpQuietUntil = 0;
     /** @type {Record<SeatId, SeatSlot>} */
     this.seats = { A: this._slot('A', 1, 'winston'), B: this._slot('B', 2, 'victoria') };
     this.phase = 'lobby';
@@ -152,6 +155,31 @@ export class Game {
     const [who, text] = this.lines.pick(key, solo);
     this.caption = { who, text, until: performance.now() + holdMs };
     this.emit({ k: 'caption', who, text, holdMs });
+  }
+
+  /**
+   * Grandpa says something in his speech bubble. Heckles wait their turn (and
+   * some are skipped: `chance`); a forced line (a tall tale) always goes.
+   * @param {keyof typeof import('./lines.js').GRANDPA} key
+   * @param {{force?: boolean, chance?: number, reply?: boolean, after?: number}} [o] reply: Grandma puts him right, when the tale has a reply; after: ms to wait (a comeback to Grandma's line)
+   */
+  gp(key, o = {}) {
+    if (o.after) { this._later(o.after, () => this.gp(key, { ...o, after: 0 })); return false; }
+    const now = performance.now();
+    if (!o.force && now < this.gpQuietUntil) return false;
+    if (o.chance !== undefined && Math.random() >= o.chance) return false;
+    const [text, reply] = this.gpLines.pick(key);
+    // Long enough to read aloud slowly.
+    const holdMs = Math.round(Math.max(2000, 800 + text.length * 55));
+    this.gpQuietUntil = now + holdMs + 3000;
+    this.emit({ k: 'gp', text, holdMs });
+    if (reply && o.reply) {
+      this._later(holdMs + 400, () => {
+        this.caption = { who: 'Grandma', text: reply, until: performance.now() + 3200 };
+        this.emit({ k: 'caption', who: 'Grandma', text: reply, holdMs: 3200 });
+      });
+    }
+    return true;
   }
 
   // ---------------- lobby ----------------
@@ -554,6 +582,7 @@ export class Game {
     this._setPhase('notch');
     this.emit({ k: 'camera', mode: 'notch' });
     this.say('notchStart', 5000);
+    this._later(5200, () => this.gp('intro'));
     this._turn();
   }
 
@@ -573,7 +602,7 @@ export class Game {
     const kind = r.kind === 'open' || r.kind === 'done' ? 'tok' : r.kind === 'clang' ? 'clang' : 'chip';
     this.emit({ k: 'hit', seat: id, kind, result: r.kind, notch: notchFrac(this.notch), lit: r.lit });
     if (r.kind === 'chip' && Math.random() < 0.5) this.say('notchChip', 2200);
-    if (r.kind === 'clang') this.say('notchClang', 2200);
+    if (r.kind === 'clang') { this.say('notchClang', 2200); this.gp('notchClang', { chance: 0.6, after: 1000 }); }
     if (r.kind === 'glance') this.say('notchGlance', 2200);
     if (r.kind === 'open') this._turn();
     // A clang, chip or glance leaves the turn where it was: cue the lit
@@ -602,6 +631,7 @@ export class Game {
     this._setPhase('fall');
     const land = landing(angle, this.tree.targetDeg);
     this.emit({ k: 'fall', angle, landing: land });
+    this._later(1700, () => this.gp('fall', { force: true }));
     this.room?.toPad(null, { t: 'cue', kind: 'timber' });
     // (No TIMBER caption: the big TIMBER! on screen says it.)
     if (this.song) { this.emit({ k: 'song-stop' }); this.song = null; }
@@ -631,8 +661,15 @@ export class Game {
       const key = land.grade === 'privy' ? 'landPrivy' : land.grade === 'skid' ? 'landSkid' : land.grade === 'close' ? 'landClose' : 'landWide';
       this.say(key, 3500);
       this._later(3600, () => this.say(score.temper >= 85 ? 'scoreHigh' : score.temper >= 60 ? 'scoreMid' : 'scoreLow', 4000));
+      // Then, while the card is up, one of Grandpa's tall tales.
+      this._later(8200, () => this.gp('tale', { force: true, reply: true }));
     };
-    this._onLanded = () => setTimeout(showScore, 2600);
+    this._onLanded = () => {
+      // Grandpa calls it from his chair as it hits.
+      const g = land.grade;
+      this.gp(g === 'privy' ? 'landPrivy' : g === 'skid' ? 'landSkid' : g === 'close' ? 'landClose' : 'landWide', { force: true });
+      setTimeout(showScore, 2600);
+    };
     setTimeout(showScore, this.sceneLands ? 12000 : 7000);
   }
 
@@ -1007,6 +1044,7 @@ export class Game {
         this.emit({ k: 'bite', streak: ev.streak, cut: cutFrac(this.cut) });
         this.room?.toPad(null, { t: 'cue', kind: 'bite' });
         if (ev.streak === 6 || ev.streak === 14) this.say('streak', 2500);
+        if (ev.streak === 10 || ev.streak === 20) this.gp('streak');
         this.maxLean = Math.max(this.maxLean || 0, Math.abs(this.cut.lean));
         if (!this.steerHinted && this.cut.bites >= 8 && this.maxLean < 0.15) { this.steerHinted = true; this.say('steerHint', 4500); }
         if (felled) this._enterFall();
@@ -1016,10 +1054,11 @@ export class Game {
         this.emit({ k: 'tantrum', blame: ev.blame, kind: ev.kind });
         this.room?.toPad(null, { t: 'cue', kind: 'tantrum' });
         this.say(ev.kind === 'push' ? 'push' : 'tug', 3200);
+        this.gp(ev.kind === 'push' ? 'push' : 'tug', { chance: 0.5, after: 1300 });
         break;
       case 'chatter':
         this.emit({ k: 'chatter' });
-        if (now - this.hintAt.chatter > 8000) { this.hintAt.chatter = now; this.say('chatter', 3000); }
+        if (now - this.hintAt.chatter > 8000) { this.hintAt.chatter = now; this.say('chatter', 3000); this.gp('chatter', { chance: 0.35, after: 1200 }); }
         break;
       case 'bind':
         this.emit({ k: 'bind', kind: ev.kind });
