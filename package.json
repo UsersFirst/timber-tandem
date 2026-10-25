@@ -6,6 +6,7 @@
   "description": "Timber Tandem — two geese, one crosscut saw. Keep your temper.",
   "scripts": {
     "dev": "wrangler dev --ip 0.0.0.0 --port 8787",
+    "predeploy": "node scripts/stamp-version.mjs",
     "deploy": "wrangler deploy",
     "test": "node --test \"test/unit/*.test.mjs\"",
     "sync-lab": "node scripts/sync-lab.mjs",

@@ -63,3 +63,48 @@ export class LinePicker {
     return /** @type {[string,string]} */ (set[n % set.length]);
   }
 }
+
+// ------------------------------------------------------------
+// Grandpa Chaos, from his rocking chair (PLAN §8: "He heckles … and tells
+// the tall tales"). Shown in a speech bubble over his head, not the caption
+// bar. Heckles are a few words, readable mid-stroke; tall tales wait for the
+// quiet moments (the score card) and Grandma sometimes puts him right.
+// ------------------------------------------------------------
+
+export const GRANDPA = {
+  intro: [['Don’t mind me. I’m supervising.'], ['Back again? Mind the privy this time.']],
+  notchClang: [['Ha! Ring the dinner bell!'], ['Ding ding! Round two!']],
+  push: [['Don’t shove her — coax her!'], ['Ha! She’s got your number!'], ['In my day we said please.']],
+  tug: [['Tug-o’-war, is it?'], ['Let go, the pair of you!'], ['She’s not a wishbone!']],
+  chatter: [['Slower! You’re tickling it!'], ['Let the teeth do the work!']],
+  streak: [['Now THAT’S sawing!'], ['Takes me back, that does.'], ['Lovely! Keep it up!']],
+  fall: [['Here she comes!'], ['Mind your tail feathers!'], ['Down she goes!']],
+  landSkid: [['Right on the skid! I taught you that.'], ['Bullseye! Did you see that, love?']],
+  landClose: [['Ooh — a whisker off!']],
+  landWide: [['Close enough for firewood!'], ['That’ll do. Trees don’t mind.']],
+  landPrivy: [['Not the privy! …Ha!'], ['That’s the third privy this year!']],
+  // Tall tales, told over the score card. [tale, Grandma's reply?]
+  tale: [
+    ['See them rings? Scorched. That’s the year I outran the forest fire. Carrying a piano.', 'It was a bonfire, dear. And a stool.'],
+    ['When I was a gosling, the trees were so tall we felled ’em on Tuesday and they landed on Friday.', 'They landed on my privy, as I recall.'],
+    ['I once sawed a pine so big, its stump’s a dance hall now. Holds forty couples.'],
+    ['I out-sawed a whole steam mill once. Single-handed. In a blizzard. Uphill.', 'He had a nap halfway through.'],
+    ['Old Misery bit me once. So I bit her back. Best of friends ever since.'],
+    ['A beaver tried to buy this valley off me. I sold him a pond. There was no pond.'],
+    ['One winter was so cold, the TIMBER froze in the air. We heard it land in spring.'],
+    ['I proposed to your grandmother on a stump. Took three days to fell it. She said yes on day two.', 'I said “hurry up”, dear.'],
+    ['Felled a tree in the fog once. Never found it. Folks say it’s still falling.'],
+    ['That wide ring there? The summer I taught the bears to share a saw.', 'One bear. One afternoon.'],
+  ],
+};
+
+/** Picks Grandpa's lines in rotation. */
+export class GrandpaPicker {
+  constructor() { /** @type {Record<string, number>} */ this.i = {}; }
+  /** @param {keyof typeof GRANDPA} key @returns {string[]} [text, Grandma's reply?] */
+  pick(key) {
+    const set = GRANDPA[key];
+    const n = (this.i[key] = ((this.i[key] ?? -1) + 1));
+    return set[n % set.length];
+  }
+}

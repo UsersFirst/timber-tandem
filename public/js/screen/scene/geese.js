@@ -321,6 +321,9 @@ export class Goose {
     this.yaw = 0;
     /** Tantrum and flinch reactions (springs, kicked by scene/tantrum.js). */
     this.react = makeReactor();
+    /** Seconds of talking left: the beak works while a line is up. */
+    this.talk = 0;
+    this._talkT = 0;
     /** The hat in flight: height above the head (m) and vertical speed. */
     this.hat = { y: 0, v: 0, tip: 0 };
     // Bones the reactions and poses touch go back to rest before each mixer update, so
@@ -412,6 +415,13 @@ export class Goose {
     if (sp2) sp2.rotation.x += this.sway * 0.06;
     const nk = this.bones.Neck;
     if (nk) nk.rotation.x += this.bob * 0.05;
+    if (this.talk > 0) {
+      // Syllables: the beak opens and shuts in bursts, with a pause now and then.
+      this.talk -= dt;
+      this._talkT += dt;
+      const t = this._talkT;
+      this.react.jaw.target = this.talk > 0 ? Math.max(0, Math.sin(t * 15)) * (0.3 + 0.2 * Math.sin(t * 3.7)) * (Math.sin(t * 1.3) > -0.75 ? 1 : 0) : 0;
+    }
     this._applyReactions(dt);
     this._sawPose(dt);
     this._sitPose();
