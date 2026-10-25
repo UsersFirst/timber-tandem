@@ -472,7 +472,9 @@ export class Hud {
     g.textBaseline = 'middle';
     for (const id of /** @type {const} */ (['A', 'B'])) {
       g.fillStyle = COLOR[id];
-      g.fillText(this.names[id] || id, gutter - 8 * k, lane[id]);
+      // Squeezed to fit the gutter (a phone's strip is narrow).
+      const nm = W < 520 * k ? (this.names[id] || id).replace(/^(Sir|Lady) /, '') : this.names[id] || id;
+      g.fillText(nm, gutter - 8 * k, lane[id], Math.max(10 * k, gutter - 12 * k));
     }
     g.textBaseline = 'alphabetic';
   }
@@ -493,6 +495,7 @@ export class Hud {
     const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
     g.clearRect(0, 0, W, H);
     const cx = W / 2, cy = H - 10 * k, R = Math.min(H - 18 * k, W / 2 - 8 * k);
+    if (R <= 0) return; // hidden (the phone layout shows the aim on its steer pad)
     // Screen angle: 0 = straight up; the fan spans ±MAX_FALL_DEG, drawn wider for legibility.
     const SPREAD = 2.4;
     const ang = (deg) => (deg * SPREAD * Math.PI) / 180;
@@ -521,6 +524,13 @@ export class Hud {
     g.closePath(); g.fill();
     // The tree.
     g.fillStyle = '#8a5a2b'; g.beginPath(); g.arc(cx, cy, 6 * k, 0, Math.PI * 2); g.fill();
+    // Keyboard seats fight the tree's pull (docs/TOUCH-SOLO.md §4a): show which way it pulls.
+    if (v.pullOn && Math.abs(v.pull || 0) > 0.02) {
+      g.font = `800 ${10 * k}px system-ui, sans-serif`;
+      g.fillStyle = '#ff9a6a';
+      g.textAlign = v.pull < 0 ? 'left' : 'right';
+      g.fillText(v.pull < 0 ? '◀◀ TREE PULLS' : 'TREE PULLS ▶▶', v.pull < 0 ? 8 * k : W - 8 * k, 14 * k);
+    }
     const lbl = $('aim-lbl');
     lbl.textContent = v.aimGrade === 'skid' ? 'ON THE SKID — HOLD IT' : v.aimGrade === 'close' ? 'CLOSE — TWIST A LITTLE' : v.aimGrade === 'privy' ? 'THAT’S THE PRIVY!' : 'TWIST YOUR FIST TO AIM';
     lbl.style.color = col;

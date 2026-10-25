@@ -342,3 +342,12 @@ Log: `~/Downloads/timber-spike-1792590647544.json` (140 s, raw sensors).
 - **Deploy:** live at https://timber.housetandem.com (also https://timber-tandem.pete-872.workers.dev; `npm run deploy`; Claude may run it per `.claude/settings.json`).
 - **A real TV:** frame rate on a TV-class device. The laptop renders at 480–630 fps uncapped.
 - **Voice:** recorded lines for Grandma and Old Misery (captions only for now).
+
+## Touch solo: play on just your phone (2026-10-25)
+
+Design and status: `docs/TOUCH-SOLO.md` (issue #2, PR #3).
+- **A touch seat is a keys seat with thumbs.** `kind: 'keys'` with `keys.touch = true`. The pads call `game.key()` (via `HoldPull`), so the saw, Grandma and scoring don't change. `game.touchSteer(id, x)` sets an analog thumb in place of Q/W, and `game.touchSolo()` starts solo straight away (no lobby, safety card or lesson).
+- **The tree's pull** (`core/tree-pull.js`) acts on keys seats only, keyboard and touch alike. The phone remote has none: the twist is already hard (Pete, 2026-10-25). Each seat's roll is `keysRoll(input, pull)`. The pull starts after `PULL.COACH_BITES` bites, and a fresh one is made per tree in `_enterSaw`.
+- **Screen side:** `screen/touch.js` (`TouchPads`) renders the pads and runs the pointer handling, beat cue, coach, rotate pause, haptics, Wake Lock and fullscreen. `html[data-touch]` CSS in `index.html` folds the TV HUD into a top strip. `main.js` detects a phone (`(pointer: coarse) and (hover: none)`, or `?touch`).
+- **View additions:** `rolls`, `pull`, `pullOn`, `touch`, `coach`.
+- **Smoke:** `node scripts/smoke-toy.mjs touch`.

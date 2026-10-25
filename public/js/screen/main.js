@@ -19,6 +19,7 @@ import { isMode } from '../core/modes.js';
 import { Game } from './game.js';
 import { Presenter } from './presenter.js';
 import { GuestKeys } from './guest-keys.js';
+import { TouchPads, isTouchDevice } from './touch.js';
 import { ScreenNav } from './nav.js';
 
 const params = new URLSearchParams(location.search);
@@ -40,6 +41,28 @@ let presenter = null;
 let game = null;
 /** @type {'menu'|'host'|'guest'} */
 let role = 'menu';
+
+// Solo on just your phone (docs/TOUCH-SOLO.md). ?touch forces it on a desktop.
+const touchDevice = isTouchDevice() || params.has('touch');
+let touchWanted = params.has('touch') && params.get('host') === 'solo';
+/** @type {TouchPads|null} */
+let touch = null;
+if (touchDevice) {
+  // The main menu on a phone: Solo plays right here; two players on one
+  // screen needs a TV or a laptop (online play by touch comes later).
+  const solo = /** @type {any} */ (document.querySelector('[data-title="solo"]'));
+  const couch = /** @type {any} */ (document.querySelector('[data-title="couch"]'));
+  if (solo) { solo.label = 'Solo — on this phone'; solo.sub = 'Your thumbs on the saw · Grandma on the other end'; }
+  if (couch) { couch.disabled = true; couch.sub = 'Needs a TV or laptop'; }
+}
+
+/** Start (or restart) touch play on this game. @param {Game} g */
+function beginTouch(g) {
+  if (!touch) touch = new TouchPads({ game: g });
+  touch.game = g;
+  touch.start();
+  g.touchSolo();
+}
 
 // Browsers only start audio after a gesture: unlock on the first tap or key.
 const unlockOnce = () => { presenter?.unlockAudio(); };
@@ -79,7 +102,8 @@ $('title').addEventListener('click', (ev) => {
   const a = /** @type {HTMLElement} */ (ev.target)?.closest?.('[data-title]')?.getAttribute('data-title');
   if (!a) return;
   presenter?.audio?.ready && presenter.audio.play('ui-ok');
-  if (a === 'solo') pickMode('solo');
+  if (a === 'solo' && touchDevice) startTouchSolo();
+  else if (a === 'solo') pickMode('solo');
   if (a === 'couch') pickMode('couch');
   if (a === 'online-host') pickMode('online');
 });
@@ -117,12 +141,20 @@ function pickMode(mode) {
   startHost(mode);
 }
 /** The page opened on the bare main menu (no params), so the menu may rewrite the URL. */
-const menuOwnsUrl = !location.search || /^\?host=(solo|couch|online)$/.test(location.search);
+const menuOwnsUrl = !location.search || /^\?host=(solo|couch|online)(&touch)?$/.test(location.search) || location.search === '?touch';
+
+/** Solo on this phone: straight into the game, no lobby. */
+function startTouchSolo() {
+  if (menuOwnsUrl) history.replaceState(null, '', '?host=solo&touch');
+  touchWanted = true;
+  if (role === 'host' && game) { $('title').hidden = true; beginTouch(game); return; }
+  startHost('solo');
+}
 
 /** @param {string} code */
 function joinFromMenu(code) {
   // This screen was hosting: joining someone else starts over as their guest.
-  if (role === 'host') { location.href = `/?join=${code}`; return; }
+  if (role === 'host') { location.href = `./?join=${code}`; return; }
   history.replaceState(null, '', `?join=${code}`);
   startGuest(code);
 }
@@ -146,11 +178,12 @@ async function startHost(mode) {
   }, { relayBase: params.get('relay') || undefined });
 
   presenter = new Presenter({
-    canvas, role: 'host', toLocal: (h) => h, quality: params.get('quality') || undefined, noScene: params.has('noscene'),
+    // Phones start at medium quality (no shadow maps, pixel ratio 1.5).
+    canvas, role: 'host', toLocal: (h) => h, quality: params.get('quality') || (touchDevice ? 'medium' : undefined), noScene: params.has('noscene'),
     onAction: (a, arg) => hostAction(g, a, arg),
     onLand: () => g.landed(),
   });
-  const g = new Game({ room, emit: (ev) => presenter?.event(ev), params });
+  const g = new Game({ room, emit: (ev) => { presenter?.event(ev); touch?.event(ev); }, params });
   presenter.sceneReady.then((ok) => { g.sceneLands = !!ok; });
   game = g;
   /** @type {any} */ (window).__game = g;
@@ -162,16 +195,22 @@ async function startHost(mode) {
   presenter.event({ k: 'phase', phase: 'lobby' });
   g.setMode(mode);
   bindKeys(g);
+  if (touchWanted) beginTouch(g);
   let lastPhase = '';
   let lastMode = g.mode;
   runLoop(() => {
     const now = performance.now();
     const v = g.frame(now);
     presenter?.frame(v, now);
+    if (touch?.on) {
+      touch.frame(v, now);
+      // There's no lobby on a phone: "play again" goes straight to a new game.
+      if (v.phase === 'lobby') g.touchSolo();
+    }
     // A mode change from the lobby or a phone keeps the URL in step for reloads.
     if (g.mode !== lastMode) { lastMode = g.mode; if (menuOwnsUrl) history.replaceState(null, '', `?host=${g.mode}`); }
     if (v.phase !== lastPhase) {
-      if (v.phase === 'title') showTitle('main');
+      if (v.phase === 'title') { showTitle('main'); if (touch?.on) { touch.stop(); g.endTouch(); touchWanted = false; } }
       else if (lastPhase === 'title') $('title').hidden = true;
       lastPhase = v.phase;
     }
@@ -320,7 +359,7 @@ async function startGuest(codeIn) {
 
   /** @param {string} a */
   function guestAction(a) {
-    if (a === 'leave') { keys?.stop(); relay.close(); location.href = '/'; return; }
+    if (a === 'leave') { keys?.stop(); relay.close(); location.href = './'; return; }
     if (a === 'guest-keys' && presenter?.hud.guestLink && !keys) {
       keys = new GuestKeys({
         link: presenter.hud.guestLink, clock, base: params.get('relay') || undefined,

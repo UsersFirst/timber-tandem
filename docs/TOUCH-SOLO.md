@@ -1,6 +1,6 @@
 # Touch solo: play on just your phone
 
-**Status:** Pete answered the questions on 2026-10-25 (§9). Nothing is built yet.
+**Status:** Pete answered the questions on 2026-10-25 (§9). T0–T2 are built, and T3 partly (§10).
 
 **Goal:** someone with only a phone opens timber.housetandem.com, taps **Solo**, turns the phone sideways and saws with Grandma using their thumbs. No TV, no second phone and no QR code.
 
@@ -130,3 +130,18 @@ The scene must hold 60 fps on a mid-range phone.
 5. Landscape only?
 
 </details>
+
+## 10. What's built (2026-10-25)
+
+**Try it:** open the PR preview on a phone, turn it sideways and tap **Solo — on this phone**. On a desktop, add `?touch` to the URL.
+
+| Step | Status |
+|---|---|
+| **T0** | ✅ The phone menu (Solo on this phone; Two players greyed out, "Needs a TV or laptop"). One tap goes straight to the cold open, with no lobby, safety card or lesson. Rotate card, and the game pauses if the phone is turned upright. `?host=solo&touch` reloads into it. |
+| **T1** | ✅ Saw pad (hold to pull; the edge fills on your beat; HOLD / LET GO tells you what to do now), hatchet pad in the notch, steer pad with analog roll, a tall target band and a green border when on target. The tree's pull works for touch and keyboard (`core/tree-pull.js`), and the TV aim dial shows "TREE PULLS" for keyboard seats. The TV HUD folds into a strip at the top, and captions move up. |
+| **T2** | ✅ The first-strokes coach, first tree of the visit only. The pull starts after 3 bites. |
+| **T3** | Partly. ✅ Android haptics, the iPhone silent-switch audio fix, Wake Lock, Android fullscreen + landscape lock, phones start at medium quality. ⏳ Still to do: the automatic drop to low quality, the Add to Home Screen manifest, and measuring on real phones. |
+
+**Different from the mockups:** the beat strip stays inside the top strip under the blade, not between the pads. The light above the saw pad carries the beat for your thumbs, and on short screens (under 340 px) the strip is dropped.
+
+**Tests:** `tree-pull.test.mjs` (5 unit tests), and a new `touch` smoke scenario. It taps through the phone menu, plays a whole tree with pointer events on the real pads (chopping, sawing on the beat, steering against the pull), checks the layout at 844×390 and 667×320, and checks the rotate card.
