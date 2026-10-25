@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Timber Tandem — scene lab</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1a140f; color: #f3e6cf; font: 13px/1.3 system-ui, sans-serif; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #panel { position: fixed; top: 8px; left: 8px; width: 260px; background: rgba(20,14,10,.78); padding: 8px 10px; border-radius: 8px; max-height: calc(100vh - 16px); overflow: auto; }
+  #panel.hidden { display: none; }
+  label { display: grid; grid-template-columns: 70px 1fr 38px; gap: 6px; align-items: center; margin: 3px 0; }
+  button, select { margin: 2px 2px 2px 0; background: #3b2b1e; color: #f3e6cf; border: 1px solid #6b5038; border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+  #stats { margin-top: 6px; opacity: .8; font-variant-numeric: tabular-nums; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <div>
+    <select id="phase"><option>idle</option><option>notch</option><option selected>saw</option><option>fall</option><option>done</option></select>
+    <select id="cam"><option>intro</option><option selected>saw</option><option>notch</option><option>wide</option></select>
+  </div>
+  <label>s <input id="s" type="range" min="-1" max="1" step="0.01" value="0"><span></span></label>
+  <label>e <input id="e" type="range" min="-1" max="1" step="0.01" value="0"><span></span></label>
+  <label>lean <input id="lean" type="range" min="-1" max="1" step="0.01" value="0"><span></span></label>
+  <label>cut <input id="cut" type="range" min="0" max="1" step="0.01" value="0.3"><span></span></label>
+  <label>notch <input id="notch" type="range" min="0" max="1" step="0.01" value="0"><span></span></label>
+  <label><input id="auto" type="checkbox"> auto saw (100 BPM)</label>
+  <div>
+    <select id="blame"><option value="">blame —</option><option>A</option><option>B</option></select>
+    <select id="lit"><option value="">lit —</option><option>A</option><option>B</option></select>
+  </div>
+  <div>
+    <button data-hit="A:tok">A tok</button><button data-hit="B:tok">B tok</button><button data-hit="A:chip">A chip</button><button data-hit="B:clang">clang</button>
+  </div>
+  <div>
+    <button id="bite">bite</button><button id="tantrum">tantrum</button><button id="chatter">chatter</button>
+    <button id="fall">fall</button><button id="celebrate">celebrate</button>
+  </div>
+  <div>
+    <select id="tree"><option>small</option><option>big</option></select>
+    <select id="castB"><option>victoria</option><option>grandma</option><option>winston</option></select>
+    <button id="reset">new tree</button>
+  </div>
+  <div><button id="demo">▶ demo tree</button></div>
+  <div id="stats"></div>
+</div>
+<script type="module">
+import { createScene } from '../js/screen/scene.js';
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+if (q.has('nopanel')) $('panel').classList.add('hidden');
+const canvas = $('c');
+const sc = await createScene(canvas, { quality: q.get('quality') || 'high' });
+window.__scene = sc;
+await sc.setCast({ A: 'winston', B: q.get('castB') || 'victoria' });
+const view = { phase: 'saw', s: 0, e: 0, zone: 'green', blame: null, lean: 0, cutFrac: 0.3, notchFrac: 0, litFace: null };
+window.__view = view;
+sc.setTree({ kind: q.get('tree') || 'small', targetDeg: 8 });
+sc.setCamera('saw');
+function zoneOf(e) { const m = Math.abs(e); return m < 0.35 ? 'green' : m < 0.8 ? 'amber' : 'red'; }
+for (const id of ['s', 'e', 'lean', 'cut', 'notch']) {
+  const el = $(id);
+  const out = el.nextElementSibling;
+  const set = () => { const v = +el.value; out.textContent = v.toFixed(2);
+    if (id === 's') view.s = v; if (id === 'e') { view.e = v; view.zone = zoneOf(v); } if (id === 'lean') view.lean = v; if (id === 'cut') view.cutFrac = v; if (id === 'notch') view.notchFrac = v; };
+  el.oninput = set; set();
+}
+$('phase').onchange = () => { view.phase = $('phase').value; };
+$('cam').onchange = () => sc.setCamera($('cam').value);
+$('blame').onchange = () => { view.blame = $('blame').value || null; };
+$('lit').onchange = () => { view.litFace = $('lit').value || null; };
+for (const b of document.querySelectorAll('[data-hit]')) b.onclick = () => { const [s, k] = b.dataset.hit.split(':'); sc.hit(s, k); };
+$('bite').onclick = () => sc.bite();
+$('tantrum').onclick = () => sc.tantrum(view.blame, view.e > 0 ? 'tug' : 'push');
+$('chatter').onclick = () => sc.chatter();
+$('fall').onclick = async () => { view.phase = 'fall'; await sc.fall(view.lean * 25); view.phase = 'done'; sc.celebrate(); };
+$('celebrate').onclick = () => sc.celebrate();
+$('reset').onclick = () => { sc.setTree({ kind: $('tree').value, targetDeg: 8 }); view.phase = 'saw'; view.cutFrac = 0; view.notchFrac = 0; };
+$('castB').onchange = () => sc.setCast({ A: 'winston', B: $('castB').value });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function demo() {
+  sc.setTree({ kind: $('tree').value, targetDeg: 8 });
+  Object.assign(view, { phase: 'idle', s: 0, e: 0, cutFrac: 0, notchFrac: 0, lean: 0, litFace: null, blame: null, zone: 'green' });
+  sc.setCamera('intro'); await sleep(2500);
+  view.phase = 'notch'; sc.setCamera('notch'); await sleep(1800);
+  for (let i = 0; i < 6; i++) { const seat = i % 2 ? 'B' : 'A'; view.litFace = seat; await sleep(450); sc.hit(seat, 'tok'); await sleep(250); view.notchFrac = (i + 1) / 6; }
+  view.litFace = null;
+  view.phase = 'saw'; sc.setCamera('saw'); await sleep(1500);
+  const beat = 600; const t0 = performance.now(); let lastSign = 0; let bites = 0;
+  while (view.cutFrac < 1) {
+    const t = performance.now() - t0;
+    view.s = -Math.cos(Math.PI * t / beat);
+    view.lean = Math.min(1, t / 6000) * 0.4;
+    const sg = Math.sign(Math.sin(Math.PI * t / beat));
+    if (sg !== lastSign) { lastSign = sg; if (t > 300) { bites++; view.cutFrac = Math.min(1, bites / 14); sc.bite(); } }
+    if (bites === 6 && !demo._t) { demo._t = 1; view.e = -0.7; view.zone = 'amber'; view.blame = 'B'; await sleep(500); sc.tantrum('B'); view.e = 0; view.zone = 'green'; view.blame = null; }
+    await sleep(16);
+  }
+  demo._t = 0;
+  view.phase = 'fall'; await sc.fall(view.lean * 25);
+  view.phase = 'done'; sc.celebrate();
+}
+$('demo').onclick = demo;
+window.__demo = demo;
+
+// ?manual: no animation loop; window.__step(ms, n) advances n fixed steps
+// (frame-exact captures for scripts/dev-tantrum-strip.mjs).
+let simT = 0;
+window.__step = (ms = 16.67, n = 1) => { for (let i = 0; i < n; i++) { simT += ms; if ($('auto').checked || window.__autoSaw) view.s = -Math.cos(Math.PI * simT / 600); sc.update(ms, view); } };
+let last = performance.now(), frames = 0, acc = 0;
+function loop(now) {
+  const dt = now - last; last = now;
+  if ($('auto').checked) { view.s = -Math.cos(Math.PI * now / 600); }
+  sc.update(dt, view);
+  frames++; acc += dt;
+  if (acc > 500) { const i = sc.info; $('stats').textContent = `${(1000 * frames / acc).toFixed(0)} fps · ${i.drawCalls} draws · ${(i.triangles / 1000).toFixed(0)}k tris`; frames = 0; acc = 0; }
+  requestAnimationFrame(loop);
+}
+addEventListener('resize', () => sc.resize(innerWidth, innerHeight));
+sc.resize(innerWidth, innerHeight);
+if (!q.has('manual')) requestAnimationFrame(loop);
+document.title = 'READY';
+</script>
+</body>
+</html>

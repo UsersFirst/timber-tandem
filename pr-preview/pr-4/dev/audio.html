@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timber Tandem — audio bench</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: dark; }
+  body { font: 15px/1.4 system-ui, sans-serif; background: #1d1712; color: #f3e6d3; margin: 0; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  h2 { font-size: 15px; margin: 18px 0 8px; color: #e8b46b; }
+  section { background: #2a211a; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; max-width: 900px; }
+  button { font: inherit; background: #4a3626; color: #f3e6d3; border: 1px solid #6b4f37; border-radius: 6px; padding: 6px 10px; margin: 3px; cursor: pointer; }
+  button:hover { background: #5c4430; }
+  button.primary { background: #e8743b; border-color: #e8743b; color: #1d1712; font-weight: 600; }
+  label { display: inline-flex; gap: 8px; align-items: center; margin: 4px 14px 4px 0; }
+  input[type=range] { width: 180px; }
+  output, code { font-family: ui-monospace, monospace; color: #9fd4ff; }
+  #beat { font-size: 22px; }
+</style>
+</head>
+<body>
+<h1>Timber Tandem audio bench</h1>
+
+<section>
+  <button id="unlock" class="primary">Unlock audio</button>
+  <span>state: <output id="state">locked</output> · output latency: <output id="lat">–</output> ms</span>
+  <label>volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+  <label><input id="mute" type="checkbox"> mute</label>
+</section>
+
+<section>
+  <h2>One-shots</h2>
+  <div id="sfx"></div>
+  <label>pan <input id="pan" type="range" min="-1" max="1" step="0.1" value="0"></label>
+</section>
+
+<section>
+  <h2>Work song: Old Misery's Reel</h2>
+  <button id="songStart">Start (in 0.5 s, 4-beat count-in)</button>
+  <button id="songStop">Stop</button>
+  <label>BPM <input id="bpm" type="range" min="80" max="110" step="1" value="100"> <output id="bpmOut">100</output></label>
+  <label>intensity <input id="int" type="range" min="0" max="3" step="1" value="1"> <output id="intOut">1</output></label>
+  <div>beat: <output id="beat">–</output></div>
+  <button id="clicks">8 calibration clicks</button>
+</section>
+
+<section>
+  <h2>Saw voice</h2>
+  <label><input id="auto" type="checkbox"> auto-saw on the beat</label>
+  <label>speed <input id="speed" type="range" min="0" max="1" step="0.01" value="0"></label>
+  <label>zone
+    <select id="zone"><option>green</option><option>amber</option><option>red</option></select></label>
+  <label>strain
+    <select id="sign"><option value="0">none</option><option value="-1">compression (push)</option><option value="1">tension (tug)</option></select></label>
+  <label>streak <input id="streak" type="range" min="0" max="24" step="1" value="0"> <output id="streakOut">0</output></label>
+</section>
+
+<script type="module">
+import { TimberAudio, SFX_NAMES } from '../js/screen/audio.js';
+
+const audio = new TimberAudio();
+window.__audio = audio;
+const $ = (id) => document.getElementById(id);
+
+$('unlock').onclick = async () => {
+  await audio.unlock();
+  $('state').textContent = audio.ready ? 'running' : 'suspended';
+  $('lat').textContent = audio.outputLatencyMs.toFixed(1);
+};
+
+for (const name of SFX_NAMES) {
+  const b = document.createElement('button');
+  b.textContent = name;
+  b.onclick = () => audio.play(name, { pan: Number($('pan').value) });
+  $('sfx').appendChild(b);
+}
+
+$('vol').oninput = (e) => audio.setVolume(Number(e.target.value));
+$('mute').onchange = (e) => audio.mute(e.target.checked);
+
+$('songStart').onclick = () => {
+  audio.setIntensity(Number($('int').value));
+  audio.startSong({ bpm: Number($('bpm').value), startPerfMs: performance.now() + 500 + 4 * 60000 / Number($('bpm').value), countIn: 4 });
+};
+$('songStop').onclick = () => audio.stopSong(400);
+$('bpm').oninput = (e) => { $('bpmOut').textContent = e.target.value; audio.setBpm(Number(e.target.value)); };
+$('int').oninput = (e) => { $('intOut').textContent = e.target.value; audio.setIntensity(Number(e.target.value)); };
+$('clicks').onclick = () => {
+  const t0 = performance.now() + 300;
+  for (let i = 0; i < 8; i++) audio.click(t0 + i * 600, i % 4 === 0);
+};
+$('streak').oninput = (e) => { $('streakOut').textContent = e.target.value; };
+
+function frame() {
+  const now = performance.now();
+  const b = audio.beatAt(now);
+  $('beat').textContent = Number.isFinite(b) ? b.toFixed(2) : '–';
+  let speed = Number($('speed').value);
+  if ($('auto').checked) {
+    // Blade speed of a perfect stroke: |sin| of the beat phase.
+    const beat = Number.isFinite(b) ? b : now / 600;
+    speed = Math.abs(Math.sin(Math.PI * beat));
+  }
+  audio.setSawVoice({
+    speed,
+    zone: /** @type {any} */ ($('zone').value),
+    strainSign: /** @type {any} */ (Number($('sign').value)),
+    streak: Number($('streak').value),
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
