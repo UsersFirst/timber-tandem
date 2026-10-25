@@ -308,7 +308,8 @@ export class Hud {
     // The word that matters, big enough for the couch.
     const label = v.zone === 'green' ? (v.streak > 2 ? 'singing' : '') : e < 0 ? 'PUSH — let it go' : 'TUG — both pulling';
     if (label) {
-      g.font = `800 ${v.zone === 'green' ? 20 * k : 30 * k}px system-ui, sans-serif`;
+      const fit = Math.min(1, H / (120 * k)); // the phone's strip is shorter than the TV's blade
+      g.font = `800 ${(v.zone === 'green' ? 20 : 30) * k * Math.max(0.45, fit)}px system-ui, sans-serif`;
       g.textAlign = 'center';
       g.fillStyle = v.zone === 'green' ? 'rgba(126,224,138,.9)' : zoneCol;
       g.fillText(label, W / 2, H - 4 * k);
@@ -415,11 +416,14 @@ export class Hud {
       g.globalAlpha = lit ? pulse : 1;
       g.fill();
       g.globalAlpha = 1;
-      const name = v.seats?.find((s) => s.id === id)?.name || id;
+      const full = v.seats?.find((s) => s.id === id)?.name || id;
+      const narrow = W < 520 * k; // a phone's top strip
+      const name = narrow ? full.replace(/^(Sir|Lady) /, '') : full;
       g.font = `700 ${15 * k}px system-ui, sans-serif`;
       g.textAlign = id === 'A' ? 'right' : 'left';
       g.fillStyle = lit ? '#fff' : 'rgba(246,234,216,.55)';
-      g.fillText(lit ? name + ' — chop!' : name, cx + dir * (24 * k + r * 2.4), cy + 6 * k);
+      const tx = cx + dir * (24 * k + r * 2.4);
+      g.fillText(lit ? (narrow ? 'Chop!' : name + ' — chop!') : name, tx, cy + 6 * k, Math.max(20 * k, id === 'A' ? tx - 4 * k : W - tx - 4 * k));
     }
     // Progress pips under the faces.
     const n = Math.max(1, Math.round(v.notchSteps || 6)), done = Math.round(open * n);
@@ -446,25 +450,43 @@ export class Hud {
     g.strokeStyle = 'rgba(255,255,255,.15)';
     g.lineWidth = 1 * k;
     for (const id of /** @type {const} */ (['A', 'B'])) line(g, gutter, lane[id], W, lane[id]);
-    // Target beats: A's pull lands on odd beats (s* = +1), B's on even.
+    // Each pull is an oval on its player's track, from when the pull starts
+    // (the partner's beat) to when it should be done (your beat): A's pulls
+    // end on odd beats, B's on even. Hold for the length of your oval, then
+    // let go while your partner's runs. The one under the now line fills.
+    const xAt = (/** @type {number} */ beat) => nowX + (beat - bp) * beatMs * pxPerMs;
+    const rad = Math.max(5 * k, Math.min(8 * k, H * 0.19));
+    g.save();
+    g.beginPath(); g.rect(gutter, 0, W - gutter, H); g.clip();
     for (let b = Math.floor(bp) - 2; b <= Math.ceil(bp) + 5; b++) {
-      if (b < 0) continue;
-      const x = nowX + (b - bp) * beatMs * pxPerMs;
-      if (x < gutter) continue;
+      if (b < 1) continue;
+      const x0 = xAt(b - 1) + 2 * k, x1 = xAt(b) - 2 * k;
+      if (x1 < gutter || x0 > W) continue;
       const id = b % 2 === 1 ? 'A' : 'B';
+      const y = lane[id];
+      const past = b <= bp, now = !past && b - 1 <= bp;
       g.fillStyle = COLOR[id];
-      g.globalAlpha = b < bp ? 0.25 : 0.9;
-      g.beginPath(); g.arc(x, lane[id], 9 * k, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = past ? 0.22 : now ? 0.4 : 0.7;
+      roundRect(g, x0, y - rad, x1 - x0, rad * 2, rad); g.fill();
+      if (now) {
+        // The part already held, bright, up to the now line.
+        g.globalAlpha = 1;
+        g.save(); g.beginPath(); g.rect(x0, y - rad - 2 * k, Math.max(0, nowX - x0), rad * 2 + 4 * k); g.clip();
+        roundRect(g, x0, y - rad, x1 - x0, rad * 2, rad); g.fill();
+        g.restore();
+        g.strokeStyle = '#fff'; g.lineWidth = 1.5 * k;
+        roundRect(g, x0, y - rad, x1 - x0, rad * 2, rad); g.stroke();
+      }
       g.globalAlpha = 1;
     }
-    // Actual pull ends from each handle.
+    // Where each handle actually finished its pull: a white tick on its track.
     for (const r of this.revs) {
       const x = nowX + (r.at - nowH) * pxPerMs;
       if (x < gutter || x > W) continue;
-      g.strokeStyle = '#fff';
-      g.lineWidth = 2.5 * k;
-      g.beginPath(); g.arc(x, lane[r.seat], 13 * k, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#fff';
+      g.fillRect(x - 1.5 * k, lane[r.seat] - rad - 4 * k, 3 * k, rad * 2 + 8 * k);
     }
+    g.restore();
     g.fillStyle = 'rgba(255,255,255,.85)';
     g.fillRect(nowX - 1.5 * k, 4 * k, 3 * k, H - 8 * k);
     g.font = `700 ${14 * k}px system-ui, sans-serif`;

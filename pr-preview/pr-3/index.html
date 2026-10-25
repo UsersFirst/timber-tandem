@@ -215,10 +215,6 @@
   .tp-glyph { width: clamp(30px, 9vh, 46px); height: clamp(30px, 9vh, 46px); border-radius: 12px; background: #e8743b; color: #fff; font: 900 clamp(18px, 5.5vh, 26px) Georgia, serif; display: grid; place-items: center; }
   .tp-big { font: 900 clamp(17px, 5.6vh, 24px) system-ui, sans-serif; letter-spacing: .02em; }
   .tp-sub { font-size: clamp(10px, 3vh, 13px); opacity: .85; }
-  #tp-beat { position: absolute; left: calc(10px + var(--sl) + var(--pad) * .59 - 38px); bottom: calc(18px + var(--sb) + var(--pad)); width: 76px; display: flex; justify-content: center; gap: 12px; padding: 6px 0; border-radius: 14px; background: rgba(27,20,16,.8); }
-  #tp-beat i { width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,.16); transition: background .06s, box-shadow .06s; }
-  #tp-beat i.w.on { background: #e8743b; box-shadow: 0 0 14px 4px rgba(232,116,59,.85); }
-  #tp-beat i.g.on { background: #3a8ee0; box-shadow: 0 0 12px 3px rgba(58,142,224,.7); }
   #tp-steer { right: calc(10px + var(--sr)); width: calc(var(--pad) * 1.45); height: calc(var(--pad) * .66); background: rgba(27,20,16,.72); border: 3px solid rgba(255,255,255,.25); }
   #tp-steer.down { border-color: rgba(255,255,255,.55); }
   #tp-steer.on { border-color: #7bd36b; box-shadow: 0 0 16px rgba(123,211,107,.6); }
@@ -240,7 +236,7 @@
   html[data-touch] .gauge { padding: 4px 8px 2px; border-radius: 14px; }
   html[data-touch] #blade { height: clamp(44px, 15vh, 70px); }
   html[data-touch] #hands { display: none !important; }
-  html[data-touch] #beats { height: clamp(22px, 8vh, 36px); margin-top: 0; }
+  html[data-touch] #beats { height: clamp(26px, 9vh, 40px); margin-top: 0; }
   html[data-touch] .cut { height: auto; border-radius: 7px; }
   html[data-touch] #cut-label { display: none; }
   html[data-touch] .dial { display: none !important; }
@@ -257,8 +253,8 @@
   html[data-touch] #caption-who { font-size: 10px; }
   html[data-touch] .toast { font-size: clamp(26px, 9vh, 40px) !important; top: 44% !important; }
   html[data-touch]:is([data-phase="score"], [data-phase="end"]) #caption { top: auto; bottom: 10px; }
-  /* Very short screens: the beat strip folds into the light above the saw pad. */
-  @media (max-height: 340px) { html[data-touch] #beats { display: none !important; } html[data-touch] #caption-text { font-size: 13px; } }
+  /* Very short screens: smaller captions. */
+  @media (max-height: 340px) { html[data-touch] #caption-text { font-size: 13px; } }
 
   /* Held upright mid-game. */
   #rotate { position: fixed; inset: 0; z-index: 80; display: none; place-content: center; text-align: center; gap: 14px; padding: 24px; background: radial-gradient(ellipse at 50% 30%, #3d2a18, #140d09); color: #f6ead8; }
