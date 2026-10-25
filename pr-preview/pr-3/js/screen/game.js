@@ -13,6 +13,7 @@ import { createSaw, stepSaw, temperOf, zoneOf, targetS, grandmaHandle, SAW } fro
 import { SeatBuffer, matchedTime, HoldPull } from '../core/input-buffer.js';
 import { createNotch, notchHit, notchFrac } from '../core/notch.js';
 import { TREES, createCut, cutBite, fallAngle, cutFrac, landing, steerLean } from '../core/tree.js';
+import { TreePull, PULL, keysRoll } from '../core/tree-pull.js';
 import { lagToBeat, songTempo, pullParity } from '../core/calibration.js';
 import { SEATS } from '../core/protocol.js';
 import { menuFor, isMode, seatBChangesHome, remoteMenu, hostOnly } from '../core/modes.js';
@@ -52,7 +53,7 @@ const GOOSE_NAMES = { winston: 'Sir Winston', victoria: 'Lady Victoria', grandma
  * @property {{joined:boolean, motion:string, calibrated:boolean, rateHz:number, sim:string|null, ua:string, flipped:boolean, keys:boolean}} phone
  * @property {'here'|string} home    'here' or 'guest:<id>'
  * @property {HoldPull} hold
- * @property {{pull:boolean, left:boolean, right:boolean}} keys
+ * @property {{pull:boolean, left:boolean, right:boolean, touch:boolean, thumb:number}} keys  keyboard or touch (touch: thumb = the steer pad, -1..1)
  * @property {number} botLag
  * @property {string} link           pairing URL for this seat's phone (host only)
  * @property {Record<string,string>} calib  step → 'wait'|'ok'|'fail'|'skip'
@@ -120,7 +121,7 @@ export class Game {
     return {
       id, num, kind: 'open', goose, buffer: new SeatBuffer(),
       phone: { joined: false, motion: 'pending', calibrated: false, rateHz: 0, sim: null, ua: '', flipped: false, keys: false },
-      home: 'here', hold: new HoldPull(), keys: { pull: false, left: false, right: false }, botLag: 0, link: '',
+      home: 'here', hold: new HoldPull(), keys: { pull: false, left: false, right: false, touch: false, thumb: 0 }, botLag: 0, link: '',
       calib: {}, tempo: null, lastRoll: 0,
     };
   }
@@ -430,6 +431,39 @@ export class Game {
     s.keys[what] = down;
   }
 
+  /**
+   * Touch: where the thumb is on the steer pad, -1..1 (0 when it lifts).
+   * @param {SeatId} id @param {number} x
+   */
+  touchSteer(id, x) {
+    const s = this.seats[id];
+    if (s.kind !== 'keys') return;
+    s.keys.thumb = Math.max(-1, Math.min(1, Number(x) || 0));
+  }
+
+  /**
+   * Solo on this phone (docs/TOUCH-SOLO.md): seat A is the touch pads, seat B
+   * is Grandma, and the game starts at once. No QR lobby (nothing to pair),
+   * no safety card (nothing is swung), no lesson (keys seats skip it).
+   */
+  touchSolo() {
+    if (this.phase !== 'lobby' && this.phase !== 'title') return false;
+    this.setMode('solo');
+    const A = this.seats.A;
+    A.kind = 'keys';
+    A.keys = { pull: false, left: false, right: false, touch: true, thumb: 0 };
+    this.safetySeen = true;
+    return this.start();
+  }
+
+  /** Leave touch play: seat A goes back to waiting for a phone or keys. */
+  endTouch() {
+    const A = this.seats.A;
+    if (!A.keys.touch) return;
+    A.keys = { pull: false, left: false, right: false, touch: false, thumb: 0 };
+    if (A.kind === 'keys') A.kind = 'open';
+  }
+
   // ---------------- phase: calibrate ----------------
 
   _calibSeats() {
@@ -624,9 +658,12 @@ export class Game {
     this.say('sawStart', 4200);
     this.steerHinted = false;
     this.maxLean = 0;
+    this.pull = new TreePull();
+    this.pullNow = 0;
   }
 
   _enterFall() {
+    this.coachDone = true;
     const angle = fallAngle(this.cut, this.cut.lean);
     this._setPhase('fall');
     const land = landing(angle, this.tree.targetDeg);
@@ -866,11 +903,17 @@ export class Game {
     if (this.phase === 'calibrate') this._calibUpdate(now);
     if (this.phase === 'intro' && now >= this.introEnd) this._afterIntro();
 
-    // Keyboard seats write their own samples (hold to pull).
+    // The tree's pull (keyboard and touch only; docs/TOUCH-SOLO.md §4a):
+    // only while sawing, and not until the first few bites are in.
+    const pulling = this.phase === 'saw' && !this.held && this.pull && this.cut.bites >= PULL.COACH_BITES;
+    this.pullNow = pulling ? this.pull.step(dt) : 0;
+
+    // Keyboard and touch seats write their own samples (hold to pull).
     for (const s of Object.values(this.seats)) {
       if (s.kind !== 'keys') continue;
       const r = s.hold.step(dt, s.keys.pull, beatMs);
-      const roll = s.keys.left ? -1 : s.keys.right ? 1 : 0;
+      const input = s.keys.touch ? s.keys.thumb : s.keys.left ? -1 : s.keys.right ? 1 : 0;
+      const roll = keysRoll(input, this.pullNow);
       s.buffer.push({ t: now, p: r.p, v: r.v, roll, flags: 3 }, now);
     }
 
@@ -994,6 +1037,13 @@ export class Game {
       held: this.held,
       menu: this.menuItems(),
       seats: this._seatsView(),
+      // Steering: each seat's roll, the tree's pull on keyboard and touch seats.
+      rolls: { A: r4(h.A.roll), B: r4(h.B.roll) },
+      pull: r4(this.pullNow || 0),
+      pullOn: Object.values(this.seats).some((s) => s.kind === 'keys'),
+      touch: Object.values(this.seats).find((s) => s.kind === 'keys' && s.keys.touch)?.id || null,
+      // The first-strokes coach on touch (first tree of the visit only).
+      coach: this.phase === 'saw' && !this.coachDone && this.cut.bites < PULL.COACH_BITES && Object.values(this.seats).some((s) => s.keys.touch),
     };
     this.view = view;
     this._syncMenu();
