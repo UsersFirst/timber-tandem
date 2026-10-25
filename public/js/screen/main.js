@@ -22,6 +22,15 @@ import { GuestKeys } from './guest-keys.js';
 import { ScreenNav } from './nav.js';
 
 const params = new URLSearchParams(location.search);
+
+// Which build is this? version.json is written at deploy (scripts/stamp-version.mjs);
+// local dev has none, and the label stays hidden.
+fetch('version.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((v) => {
+  const el = document.getElementById('build');
+  if (!v || !el) return;
+  el.textContent = `v.${v.sha} · ${v.time}${v.pr ? ` · PR #${v.pr}` : ''}${v.dirty ? ' · local changes' : ''}`;
+  el.hidden = false;
+}).catch(() => {});
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const canvas = /** @type {HTMLCanvasElement} */ ($('scene'));
 

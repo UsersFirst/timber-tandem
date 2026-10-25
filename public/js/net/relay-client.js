@@ -40,7 +40,9 @@ export class RelayClient {
 
   url() {
     const o = this.opts;
-    const base = o.base || location.origin;
+    // A PR preview on GitHub Pages has no relay of its own: it sets
+    // window.__TIMBER_RELAY to the live site and uses that one.
+    const base = o.base || /** @type {any} */ (globalThis).__TIMBER_RELAY || location.origin;
     const u = new URL('/relay', base);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
     u.searchParams.set('code', o.code);
