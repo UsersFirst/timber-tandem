@@ -142,6 +142,6 @@ The scene must hold 60 fps on a mid-range phone.
 | **T2** | ✅ The first-strokes coach, first tree of the visit only. The pull starts after 3 bites. |
 | **T3** | Partly. ✅ Android haptics, the iPhone silent-switch audio fix, Wake Lock, Android fullscreen + landscape lock, phones start at medium quality. ⏳ Still to do: the automatic drop to low quality, the Add to Home Screen manifest, and measuring on real phones. |
 
-**Different from the mockups:** the beat strip stays inside the top strip under the blade, not between the pads. The light above the saw pad carries the beat for your thumbs, and on short screens (under 340 px) the strip is dropped.
+**Different from the mockups:** the beat strip stays inside the top strip under the blade, not between the pads. **Each pull is an oval** on its player's track, from when the pull starts to when it should be done, and the one under the now line fills as you go (Pete, 2026-10-25). This replaced the dots on the TV too, and the orange/blue lights above the saw pad were removed.
 
 **Tests:** `tree-pull.test.mjs` (5 unit tests), and a new `touch` smoke scenario. It taps through the phone menu, plays a whole tree with pointer events on the real pads (chopping, sawing on the beat, steering against the pull), checks the layout at 844×390 and 667×320, and checks the rotate card.

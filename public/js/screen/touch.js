@@ -8,8 +8,8 @@
 //                in the notch, tap to chop on your turn
 //   right thumb  the steer pad: hold the knob on the target against the
 //                tree's pull (§4a); lift and it slides off to the pull side
-// The pad's edge and the light above it show the beat (the thumb hides the
-// middle). Also: the rotate card, haptics (Android), Wake Lock, fullscreen +
+// The pad's edge shows the beat (the thumb hides the middle); the beat
+// tracks up top show each pull as an oval. Also: the rotate card, haptics (Android), Wake Lock, fullscreen +
 // landscape lock (Android), and iPhone audio through the silent switch.
 // ============================================================
 
@@ -24,7 +24,6 @@ export function isTouchDevice() {
 const pct = (lean) => ((Math.max(-1, Math.min(1, lean)) + 1) / 2) * 100;
 
 const HTML = `
-  <div id="tp-beat" aria-hidden="true"><i class="w"></i><i class="g"></i></div>
   <div id="tp-saw" class="tp-pad" role="button" aria-label="Saw: hold to pull">
     <svg class="tp-ring" preserveAspectRatio="none"><rect pathLength="100" rx="22" ry="22"/></svg>
     <div class="tp-glyph">W</div>
@@ -59,8 +58,6 @@ export class TouchPads {
     this.knob = q('.tp-knob');
     this.band = q('.tp-band');
     this.privy = q('.tp-privy');
-    this.beatW = q('#tp-beat .w');
-    this.beatG = q('#tp-beat .g');
     this.ring = /** @type {SVGRectElement} */ (/** @type {unknown} */ (q('.tp-ring rect')));
     this.big = q('#tp-saw .tp-big');
     this.sub = q('#tp-saw .tp-sub');
@@ -238,11 +235,6 @@ export class TouchPads {
       const p = ready && holdNow ? Math.round(frac * 100) : 0;
       this.ring.style.strokeDasharray = `${p} ${100 - p}`;
     }
-    // The light above the pad: orange on your beat, blue on Grandma's.
-    const showBeat = saw && Number.isFinite(bp) && bp >= 0;
-    this.beatW.classList.toggle('on', showBeat && holdNow);
-    this.beatG.classList.toggle('on', showBeat && !holdNow);
-    /** @type {HTMLElement} */ (this.el.querySelector('#tp-beat')).hidden = !showBeat;
 
     // Steer pad.
     if (saw) {
@@ -262,6 +254,6 @@ export class TouchPads {
 
     // The first-strokes coach.
     this.coach.hidden = !v.coach;
-    if (v.coach) this.coach.innerHTML = holdNow ? 'Hold… <small>pull it to you on the orange light</small>' : '…then let go — <span>Grandma pulls back</span>. <small>Three strokes, then you steer.</small>';
+    if (v.coach) this.coach.innerHTML = holdNow ? 'Hold… <small>for as long as your orange oval</small>' : '…then let go — <span>Grandma pulls back</span>. <small>Three strokes, then you steer.</small>';
   }
 }
