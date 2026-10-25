@@ -196,6 +196,7 @@
   html:not([data-spike]) .spike { display: none; }
   html[data-noscene] body { background: radial-gradient(ellipse at 50% 70%, #3d2a18, #140d09); }
   @media (max-width: 760px) { #lobby-seats { grid-template-columns: 1fr; } .score-stats { grid-template-columns: 1fr; } }
+  .build { margin-top: 10px; font: 11px ui-monospace, monospace; opacity: .45; }
 </style>
 </head>
 <body>
@@ -216,6 +217,7 @@
           <uf-button data-title="how" data-flow-go="title-how" label="How to play" sub="Pull, let go, never push" variant="primary" size="lg"></uf-button>
         </nav>
         <div class="small">Victorian geese, Grandma’s woodpile, and Old Misery, a crosscut saw with a famously short temper.</div>
+        <div id="build" class="build" hidden></div>
       </uf-step>
 
       <uf-step id="title-online" class="title-page">

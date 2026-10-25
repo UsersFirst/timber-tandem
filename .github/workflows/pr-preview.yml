@@ -1,0 +1,66 @@
+name: PR Preview
+
+# Every PR gets a playable preview on GitHub Pages:
+#   https://www.usersfirst.com/timber-tandem/pr-preview/pr-<N>/
+#   …/pr-preview/pr-<N>/version.json shows the commit and time.
+# Only the static site (public/) is previewed. Rooms use the live relay at
+# timber.housetandem.com (the Durable Object deploys with main, like
+# Tandemonium's relays), so a PR that changes worker/ isn't fully previewed.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  # Reports as a check; doesn't hold back the preview (a red check next to a
+  # live preview beats a silently stale one). deploy.yml gates production.
+  tests:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      - name: Typecheck and unit tests
+        run: npm run check
+
+  preview:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages-write
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Always check out: the cleanup path (PR closed) needs a git repo too.
+      - uses: actions/checkout@v4
+
+      - name: Stage the site
+        if: github.event.action != 'closed'
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.number }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          mkdir -p _site
+          rsync -a public/ _site/
+          # No relay on Pages: point rooms at the live one.
+          for f in _site/index.html _site/phone/index.html; do
+            sed -i "s|<head>|<head><script>window.__TIMBER_RELAY='https://timber.housetandem.com'</script>|" "$f"
+          done
+          DIR=_site node scripts/stamp-version.mjs
+
+      - name: Deploy the preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./_site/
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          action: auto

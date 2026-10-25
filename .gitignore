@@ -4,3 +4,4 @@ node_modules/
 scripts/out/
 *.log
 .claude/worktrees/
+public/version.json

@@ -94,7 +94,8 @@ export class RoomHost {
     }
     await this._allow(seat, sec);
     const q = o.query ? '?' + o.query : '';
-    return `${location.origin}/phone/${q}${pairFragment(this.code, seat, sec)}`;
+    // Relative to this page, so a preview in a subfolder links its own phone page.
+    return new URL(`phone/${q}`, location.href).href + pairFragment(this.code, seat, sec);
   }
 
   async _allow(seat, sec) {
