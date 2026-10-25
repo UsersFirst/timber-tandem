@@ -9,7 +9,7 @@ const dir = path.resolve('docs/mockups/touch-solo');
 const b = await puppeteer.launch({ headless: true });
 const p = await b.newPage(); await p.setViewport({ width: 960, height: 2400, deviceScaleFactor: 1 });
 await p.goto(pathToFileURL(path.join(dir, 'mockups.html')).href, { waitUntil: 'networkidle0' });
-for (const id of ['saw', 'notch', 'coach', 'drag', 'menu']) {
+for (const id of ['saw', 'short', 'notch', 'coach', 'drag', 'menu']) {
   const el = await p.$('#' + id);
   await el.screenshot({ path: path.join(dir, id + '.png') });
   console.log(path.join(dir, id + '.png'));

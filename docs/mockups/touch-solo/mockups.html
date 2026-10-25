@@ -28,7 +28,13 @@
   .pull .glyph { width: 46px; height: 46px; border-radius: 12px; background: var(--w); color: #fff; font: 900 26px Georgia, serif; display: grid; place-items: center; margin: 0 auto 6px; }
   .pull .big { font: 900 22px system-ui; }
   .pull .sub { font-size: 12px; opacity: .85; margin-top: 2px; }
-  .ring { position: absolute; inset: -3px; border-radius: 22px; border: 3px solid transparent; border-top-color: #fff; border-right-color: #fff; opacity: .9; }
+  .ring { position: absolute; inset: -7px; border-radius: 26px; border: 5px solid transparent; border-top-color: #fff; border-right-color: #fff; border-left-color: #fff; opacity: .95; }
+  .beatlight { position: absolute; left: 45px; width: 120px; bottom: 182px; display: flex; justify-content: center; gap: 10px; padding: 6px 0; border-radius: 14px; background: rgba(27,20,16,.8); }
+  .beatlight i { width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,.18); }
+  .beatlight i.w { background: var(--w); box-shadow: 0 0 14px 4px rgba(232,116,59,.8); }
+  .thumb { position: absolute; width: 74px; height: 92px; border-radius: 40px 40px 34px 34px; background: rgba(240,200,170,.55); border: 2px solid rgba(255,255,255,.4); }
+  .steer.on { border: 3px solid var(--green); box-shadow: 0 0 14px rgba(123,211,107,.55); }
+  .steer .band { position: absolute; top: 24px; height: 52px; width: 34px; margin-left: -17px; border-radius: 8px; background: rgba(123,211,107,.28); border: 2px solid var(--green); }
   .steer { right: 0; width: 230px; height: 104px; background: var(--panel); border: 2px solid rgba(255,255,255,.25); }
   .steer .track { position: absolute; left: 18px; right: 18px; top: 46px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, rgba(229,72,77,.85) 0 22%, rgba(255,255,255,.22) 22% 100%); }
   .steer .target { position: absolute; top: 36px; width: 30px; height: 30px; margin-left: -15px; border-radius: 8px; border: 2px dashed var(--green); }
@@ -82,13 +88,30 @@
   </svg><div class="cut"><i></i></div></div>
   <div class="temper pill">TEMPER<b>92</b>1 tantrum</div>
   <div class="caption pill"><small>OLD MISERY</small>Pull, let go. Pull, let go. Lovely.</div>
-  <div class="pad pull"><div class="ring"></div><div><div class="glyph">W</div><div class="big">HOLD to pull</div><div class="sub">let go when Grandma pulls</div></div></div>
+  <div class="beatlight"><i class="w"></i><i></i><i></i></div>
+  <div class="pad pull"><div class="ring"></div><div><div class="glyph">W</div><div class="big">HOLD to pull</div><div class="sub">edge + light show your beat</div></div><div class="thumb" style="left:70px;top:44px"></div></div>
   <div class="beats pill">
     <div class="lane w"><i style="left:30px"></i><i style="left:130px"></i><i style="left:230px"></i></div>
     <div class="lane g"><i style="left:80px"></i><i style="left:180px"></i></div>
     <div class="now"></div>
   </div>
-  <div class="pad steer"><div class="lbl">STEER · hold it on the target</div><div class="track"></div><div class="target" style="left:62%"></div><div class="knob" style="left:58%"></div><div class="pullarrow">◀◀ the tree pulls</div><div class="ends"><span>‹ privy</span><span></span><span>skid ›</span></div></div>
+  <div class="pad steer on"><div class="lbl">ON TARGET · hold against the pull</div><div class="band" style="left:62%"></div><div class="track"></div><div class="knob" style="left:62%"></div><div class="pullarrow">◀◀ the tree pulls</div><div class="ends"><span>‹ privy</span><span></span><span>skid ›</span></div><div class="thumb" style="left:calc(62% - 37px);top:40px"></div></div>
+</div></div>
+
+<!-- A2: short screen, 667×320 -->
+<div class="phone saw short" id="short" style="width:667px;height:320px"><div class="safe" style="inset:8px 40px 8px 40px">
+  <div class="pause" style="width:36px;height:36px">II</div>
+  <div class="blade pill" style="width:260px;height:46px"><svg viewBox="0 0 330 58">
+    <line x1="40" x2="290" y1="14" y2="14" stroke="#e5484d" stroke-dasharray="5 4" stroke-width="2"/>
+    <line x1="40" x2="290" y1="21" y2="21" stroke="#7bd36b" stroke-dasharray="5 4" stroke-width="2"/>
+    <path d="M40 30 Q165 27 290 30" stroke="#fff" stroke-width="5" fill="none"/>
+  </svg><div class="cut"><i></i></div></div>
+  <div class="temper pill" style="padding:4px 10px">TEMPER<b style="font-size:20px">92</b></div>
+  <div class="caption pill" style="top:52px;font-size:13px;white-space:nowrap">Pull, let go. Lovely.</div>
+  <div class="beatlight" style="left:20px;width:110px;bottom:136px"><i class="w"></i><i></i><i></i></div>
+  <div class="pad pull" style="width:150px;height:128px"><div class="ring"></div><div><div class="glyph" style="width:36px;height:36px;font-size:20px">W</div><div class="big" style="font-size:17px">HOLD to pull</div></div></div>
+  <div class="pad steer on" style="width:190px;height:96px"><div class="lbl" style="font-size:10px">ON TARGET</div><div class="band" style="left:62%;top:22px;height:46px"></div><div class="track" style="top:40px"></div><div class="knob" style="left:62%;top:27px"></div><div class="pullarrow" style="top:66px">◀◀ the tree pulls</div></div>
+  <div class="note" style="top:auto;bottom:4px;right:auto;left:50%;transform:translateX(-50%);text-align:center">667×320 · beat strip folds into<br>the light above the saw pad</div>
 </div></div>
 
 <!-- B: the notch -->

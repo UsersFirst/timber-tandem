@@ -26,7 +26,9 @@ The screenshots were taken at 844×390 from `feat/grandpa-tales` (Grandpa's bubb
 
 **A touch seat is a keyboard seat with thumbs.** The touch pads call the same `game.key('A', 'pull' | 'chop' | 'left' | 'right', down)` the keyboard does. The saw model, Grandma's bot, scoring and the phases don't change. The same `HoldPull` already drives both the keyboard and the phone remote's "saw by touch" mode, so a touch score means the same as a keyboard score.
 
-The one new thing in the game logic is **analog steering**. Keys give a roll of −1, 0 or +1; the steer pad gives any value in between (`s.keys.roll`, used in place of `left/right` when set).
+Two new things in the game logic, both on the keys seat, so the keyboard and touch get them alike:
+- **Analog steering.** Keys give a roll of −1, 0 or +1; the steer pad gives any value in between (`s.keys.roll`, used in place of `left/right` when set).
+- **The tree's pull** (§4a). Keyboard and touch steering is otherwise free, so these two seats fight a drifting lean. The phone remote doesn't get it: holding a twist in your fist while you saw is already the hard way to steer.
 
 ## 3. Getting in
 
@@ -49,8 +51,8 @@ Sideways, two thumbs. The scene stays visible in the middle.
 
 | Zone | What | Size |
 |---|---|---|
-| **Bottom left: the saw pad** | Your handle (orange **W**). **Hold to pull, let go when Grandma pulls.** The ring around the pad fills on your beat, so you can keep time without looking at the beat strip. The pad's whole area is live, and a thumb that slides off it still counts as held until it lifts. | ~210×170 pt, or about a quarter of the screen |
-| **Bottom right: steer** | **You fight it.** The knob is always being pulled toward one side, as if the tree wants to lean that way, and you hold it on the target against that pull. Let go and it slides off to that side. The pull's side and strength drift now and then, so steering is managed the whole cut and never set once. The dashed box is where the tree should fall, and the red end is the privy. This replaces the TV's aim dial: the control shows its own target. | ~230×104 pt |
+| **Bottom left: the saw pad** | Your handle (orange **W**). **Hold to pull, let go when Grandma pulls.** Your thumb covers the middle of the pad, so the beat cue sits where you can still see it: the pad's **outer edge** fills on your beat, and a **light just above the pad** flashes orange on your beat and blue on Grandma's. The pad's whole area is live, and a thumb that slides off it still counts as held until it lifts. | about 40% of the screen height, square-ish |
+| **Bottom right: steer** | **You fight it** (§4a). The knob is always being pulled toward one side, as if the tree wants to lean that way, and you hold it on the target against that pull. Let go and it slides off to that side. The target is a **tall band** that reaches above the track, so you can see it around your thumb. The **whole pad's border turns green** while you're on target, so you can feel it without looking straight at it. The red end is the privy. This replaces the TV's aim dial: the control shows its own target. | about 40% of the screen height, wider than tall |
 | **Bottom middle: beat strip** | The two-lane strip from the TV, small: your dots on odd beats, Grandma's on even ones. | 250×46 |
 | **Top middle: blade strip** | The blade with its live bow and the green and red lines, the handle chips at each end, and the cut bar underneath. This is the TV's saw panel shrunk to one strip. The stroke sliders and FORWARD/BACK labels are dropped, because the pad shows your state. | 330×58 |
 | **Top right** | Temper and tantrums. | chip |
@@ -58,6 +60,20 @@ Sideways, two thumbs. The scene stays visible in the middle.
 | **Captions** | They move from the bottom (where the thumbs are) to under the blade strip, two lines at most. The big TANTRUM! word moves down to the middle of the scene so it never covers a caption. | |
 
 Everything sits inside `env(safe-area-inset-*)`, so the camera cutout and home bar never cover a pad.
+
+**Short screens.** The mockups are 844×390, but Safari's bars take space when the phone is sideways, and a small iPhone sideways (667×375) leaves about **320 px** of height. So the pads, strips and type scale with the screen height (`vh`/`clamp()`), not fixed points. Below about 340 px the beat strip folds into the light above the saw pad, and captions drop to one line. The touch smoke runs at 844×390 and 667×320.
+
+![Short screen, 667×320](mockups/touch-solo/short.png)
+
+### 4a. The tree's pull (keyboard and touch)
+
+- **What:** every tree has a lean, a pull of between about a quarter and two-thirds of full steer toward one side. Now and then (every 6–12 s) it eases to a new strength, and sometimes it switches sides. Strength and timing get tuned in play.
+- **How it acts:** the steering that counts is *your input + the pull*. To aim straight you hold against it.
+  - **Touch:** hold the knob off-centre against the pull. Let go and it slides to the pull side.
+  - **Keyboard:** hold or tap Q/W against it. With no key down, the lean drifts to the pull side.
+  - **Phone remote:** no pull. The twist is the challenge already.
+- **Where it shows:** on touch, the "◀◀ the tree pulls" arrow on the steer pad. On the TV, the same arrow sits on the aim dial for keyboard seats.
+- **When:** only while sawing, and **not during the first-strokes coach**. You learn the saw first, then the fight. Grandma follows your steering as she does now.
 
 ## 5. Each phase
 
@@ -77,6 +93,7 @@ Everything sits inside `env(safe-area-inset-*)`, so the camera cutout and home b
 
 - **Haptics (Android only):** a 10 ms tick when a stroke bites, a 15 ms tick on a chop, and a double buzz on a tantrum. iPhone Safari has no vibration API, so on iPhone the sounds do the work, as they already can (§4.9 of the plan: playable by ear).
 - **Sound:** the same cues as on the TV. Phones play through their own speaker, so lower the music bed a notch on touch to keep the hum and rasp clear.
+- **The iPhone silent switch.** Web Audio on iPhone goes quiet when the ringer switch is off, and iPhones have no vibration, so a muted phone would give no feedback at all. Set `navigator.audioSession.type = 'playback'` (Safari 17+) on the Solo tap so the game plays through the switch, as a video does.
 - **Latency:** a touch is felt instantly and the game runs on the phone, so there's no network or sensor delay. That's easier than the phone remote.
 
 ## 7. Performance
@@ -91,15 +108,15 @@ The scene must hold 60 fps on a mid-range phone.
 | Step | What | Done when |
 |---|---|---|
 | **T0** | Phone detection, the menu on a phone, Solo goes straight to touch seat A + Grandma, the rotate card | The smoke reaches the notch with an emulated iPhone |
-| **T1** | Saw and hatchet pads, the steer pad with analog roll, the compact phone HUD (§4), captions moved | A new `touch` smoke scenario fells a tree with simulated touches: temper ≥ 90, no page errors. All 10 existing scenarios still pass |
+| **T1** | Saw and hatchet pads, the steer pad with analog roll, the tree's pull for keyboard and touch (§4a), the compact phone HUD that scales with height (§4), captions moved | A new `touch` smoke scenario fells a tree with simulated touches at 844×390 and at 667×320: temper ≥ 90, no page errors. A unit test shows the pull drifts the lean with no input and that holding against it keeps it on target. All 10 existing scenarios still pass (the keyboard smokes steer against the pull) |
 | **T2** | The first-strokes coach | The coach shows once, then goes away after three clean strokes |
-| **T3** | Haptics, fullscreen/orientation on Android, Wake Lock, the Add to Home Screen manifest, the quality drop | 60 fps on Pete's phones; Pete plays a tree on an iPhone and an Android |
+| **T3** | Haptics, the iPhone silent-switch audio fix, fullscreen/orientation on Android, Wake Lock, the Add to Home Screen manifest, the quality drop | 60 fps on Pete's phones; Pete plays a tree on an iPhone and an Android |
 
 ## 9. Pete's answers (2026-10-25)
 
 1. **Saw input: hold to pull (A)** for now. Drag-the-handle (B) stays on the shelf.
 2. **Steering is actively managed:** a pull toward one side that you have to fight (§4). It doesn't simply spring back to the middle, and it doesn't stay where you leave it.
-   - Still to settle while building T1: which way the pull goes. My proposal is toward the tree's own lean, which the TV game could show too. How strong it is and how often it changes get tuned in play.
+   - The pull is the **tree's own lean** (§4a). **Keyboard gets it too; the phone remote doesn't**, because the twist is already hard. Strength and timing get tuned in play.
 3. **Two players (local multiplayer) on a phone:** greyed out. Online multiplayer is coming soon.
 4. **Online duo by touch:** later.
 5. **Landscape only**, with the rotate card.
