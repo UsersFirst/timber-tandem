@@ -1,0 +1,140 @@
+<!doctype html>
+<!-- Touch solo mockups: proposed phone controls drawn over real game frames
+     (today/*-clean.png). Rendered to PNGs by scripts/dev-touch-mockups.mjs. -->
+<html><head><meta charset="utf-8"><title>Touch solo mockups</title>
+<style>
+  :root { --w: #e8743b; --g: #3a8ee0; --ink: #f6ead8; --panel: rgba(27,20,16,.72); --green: #7bd36b; --red: #e5484d; }
+  body { margin: 0; padding: 20px; background: #0d0907; color: var(--ink); font-family: system-ui, sans-serif; display: grid; gap: 24px; }
+  .phone { position: relative; width: 844px; height: 390px; overflow: hidden; border-radius: 34px; background-size: cover; outline: 10px solid #222; }
+  .phone.saw { background-image: url(today/saw-clean.png); }
+  .phone.notch { background-image: url(today/notch-clean.png); }
+  .safe { position: absolute; inset: 10px 44px 12px 44px; } /* notch/home-bar insets in landscape */
+  .pill { background: var(--panel); border-radius: 14px; backdrop-filter: blur(4px); }
+  /* top row */
+  .pause { position: absolute; left: 0; top: 0; width: 44px; height: 44px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; font-weight: 900; font-size: 16px; letter-spacing: 2px; }
+  .tree { position: absolute; left: 54px; top: 4px; font: 600 13px Georgia, serif; opacity: .9; }
+  .tree b { display: block; font: 800 12px system-ui; color: var(--w); }
+  .temper { position: absolute; right: 0; top: 0; padding: 6px 12px; text-align: right; font-size: 11px; letter-spacing: .08em; }
+  .temper b { font-size: 24px; display: block; line-height: 1; letter-spacing: 0; }
+  .blade { position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 330px; height: 58px; }
+  .blade svg { position: absolute; inset: 0; }
+  .cut { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.15); }
+  .cut i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: #f0c060; border-radius: 2px; }
+  .caption { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); max-width: 420px; text-align: center; font: 15px Georgia, serif; padding: 6px 12px; }
+  .caption small { display: block; font: 700 10px system-ui; letter-spacing: .14em; color: #f0c060; }
+  /* pads */
+  .pad { position: absolute; bottom: 0; border-radius: 22px; display: grid; place-items: center; text-align: center; }
+  .pull { left: 0; width: 210px; height: 170px; background: rgba(232,116,59,.22); border: 3px solid var(--w); box-shadow: 0 0 0 6px rgba(232,116,59,.18), inset 0 0 30px rgba(232,116,59,.25); }
+  .pull .glyph { width: 46px; height: 46px; border-radius: 12px; background: var(--w); color: #fff; font: 900 26px Georgia, serif; display: grid; place-items: center; margin: 0 auto 6px; }
+  .pull .big { font: 900 22px system-ui; }
+  .pull .sub { font-size: 12px; opacity: .85; margin-top: 2px; }
+  .ring { position: absolute; inset: -3px; border-radius: 22px; border: 3px solid transparent; border-top-color: #fff; border-right-color: #fff; opacity: .9; }
+  .steer { right: 0; width: 230px; height: 104px; background: var(--panel); border: 2px solid rgba(255,255,255,.25); }
+  .steer .track { position: absolute; left: 18px; right: 18px; top: 46px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, rgba(229,72,77,.85) 0 22%, rgba(255,255,255,.22) 22% 100%); }
+  .steer .target { position: absolute; top: 36px; width: 30px; height: 30px; margin-left: -15px; border-radius: 8px; border: 2px dashed var(--green); }
+  .steer .knob { position: absolute; top: 33px; width: 36px; height: 36px; margin-left: -18px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+  .steer .lbl { position: absolute; left: 0; right: 0; top: 8px; font-size: 11px; letter-spacing: .1em; font-weight: 800; color: #f0c060; }
+  .steer .ends { position: absolute; left: 12px; right: 12px; bottom: 8px; display: flex; justify-content: space-between; font-size: 10px; opacity: .8; }
+  .beats { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); width: 250px; height: 46px; padding: 6px 10px; box-sizing: border-box; }
+  .lane { position: relative; height: 15px; }
+  .lane i { position: absolute; top: 3px; width: 10px; height: 10px; border-radius: 50%; }
+  .lane.w i { background: var(--w); } .lane.g i { background: var(--g); }
+  .now { position: absolute; left: 40px; top: 4px; bottom: 4px; width: 2px; background: #fff; }
+  .word { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); font: 900 26px system-ui; color: #f0c060; text-shadow: 0 2px 8px #000; }
+  .bubble { position: absolute; left: 4px; top: 54px; max-width: 220px; background: #fff6e0; color: #2a1a10; border: 2px solid #4a2c18; border-radius: 14px; padding: 6px 10px; font: 13px Georgia, serif; }
+  .bubble small { display: block; font: 800 9px system-ui; letter-spacing: .14em; color: #8a5a30; }
+  .ghost { position: absolute; width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.75), rgba(255,255,255,.05) 70%); }
+  .coach { position: absolute; left: 230px; bottom: 60px; font: 800 17px system-ui; text-shadow: 0 2px 6px #000; }
+  .coach span { color: var(--g); }
+  .note { position: absolute; right: 0; top: 70px; text-align: right; background: rgba(0,0,0,.55); padding: 6px 10px; border-radius: 10px; font-size: 11px; opacity: .8; }
+  /* option B: drag the handle */
+  .drag { left: 0; width: 300px; height: 120px; background: rgba(232,116,59,.18); border: 3px solid var(--w); }
+  .drag .rail { position: absolute; left: 24px; right: 24px; top: 58px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.3); }
+  .drag .handle { position: absolute; top: 40px; left: 40px; width: 44px; height: 44px; border-radius: 12px; background: var(--w); font: 900 24px Georgia, serif; color: #fff; display: grid; place-items: center; }
+  .drag .ends { position: absolute; left: 14px; right: 14px; bottom: 8px; display: flex; justify-content: space-between; font-size: 11px; }
+  .drag .top { position: absolute; top: 8px; left: 0; right: 0; font-size: 12px; font-weight: 800; letter-spacing: .1em; color: #f0c060; }
+  /* portrait */
+  .portraits { display: flex; gap: 40px; width: max-content; padding: 12px 12px 0; }
+  .tall { position: relative; width: 300px; height: 650px; border-radius: 34px; outline: 10px solid #222; background: radial-gradient(ellipse at 50% 30%, #3d2a18, #140d09); overflow: hidden; text-align: center; }
+  .logo { margin-top: 90px; font: 40px/1 Georgia, serif; color: #f0c060; } .logo b { display: block; color: #fff; font-weight: 400; }
+  .tag { font: italic 14px Georgia, serif; margin: 10px 0 22px; opacity: .9; }
+  .btn { margin: 0 18px 12px; padding: 14px 16px; text-align: left; border: 2px solid #b8873c; border-radius: 16px; background: rgba(90,60,30,.45); }
+  .btn b { display: block; font-size: 17px; } .btn span { font-size: 11px; opacity: .75; }
+  .btn.hi { border-color: #f0b040; box-shadow: 0 0 0 3px rgba(240,176,64,.35); }
+  .btn.off { opacity: .35; }
+  .rot { font: 900 22px system-ui; margin-top: 210px; } .rot + p { opacity: .8; padding: 0 30px; font-size: 14px; }
+  .phoneicon { width: 60px; height: 104px; border: 4px solid #fff; border-radius: 12px; margin: 30px auto 0; transform: rotate(-90deg); box-shadow: 0 0 0 0 transparent; }
+  .cap { font-size: 13px; opacity: .7; margin: 18px 0 8px; text-align: center; }
+</style></head>
+<body>
+
+<!-- A: sawing -->
+<div class="phone saw" id="saw"><div class="safe">
+  <div class="pause">II</div>
+  <div class="tree">Small pine · Back cut<b>Streak 12</b></div>
+  <div class="blade pill"><svg viewBox="0 0 330 58">
+    <line x1="40" x2="290" y1="14" y2="14" stroke="#e5484d" stroke-dasharray="5 4" stroke-width="2"/>
+    <line x1="40" x2="290" y1="21" y2="21" stroke="#7bd36b" stroke-dasharray="5 4" stroke-width="2"/>
+    <path d="M40 30 Q165 26 290 30" stroke="#fff" stroke-width="5" fill="none"/>
+    <rect x="12" y="18" width="24" height="24" rx="6" fill="#e8743b"/><text x="24" y="36" fill="#fff" font-family="Georgia" font-weight="900" font-size="15" text-anchor="middle">W</text>
+    <rect x="294" y="18" width="24" height="24" rx="6" fill="#3a8ee0"/><text x="306" y="36" fill="#fff" font-family="Georgia" font-weight="900" font-size="15" text-anchor="middle">G</text>
+  </svg><div class="cut"><i></i></div></div>
+  <div class="temper pill">TEMPER<b>92</b>1 tantrum</div>
+  <div class="caption pill"><small>OLD MISERY</small>Pull, let go. Pull, let go. Lovely.</div>
+  <div class="pad pull"><div class="ring"></div><div><div class="glyph">W</div><div class="big">HOLD to pull</div><div class="sub">let go when Grandma pulls</div></div></div>
+  <div class="beats pill">
+    <div class="lane w"><i style="left:30px"></i><i style="left:130px"></i><i style="left:230px"></i></div>
+    <div class="lane g"><i style="left:80px"></i><i style="left:180px"></i></div>
+    <div class="now"></div>
+  </div>
+  <div class="pad steer"><div class="lbl">STEER · aim at the skid</div><div class="track"></div><div class="target" style="left:62%"></div><div class="knob" style="left:55%"></div><div class="ends"><span>‹ privy</span><span>drag</span><span>skid ›</span></div></div>
+</div></div>
+
+<!-- B: the notch -->
+<div class="phone notch" id="notch"><div class="safe">
+  <div class="pause">II</div>
+  <div class="tree">Small pine · Notch<b>Your turn</b></div>
+  <div class="temper pill">NOTCH<b>40%</b>tap on your turn</div>
+  <div class="bubble"><small>GRANDPA</small>Don’t mind me. I’m supervising.</div>
+  <div class="pad pull" style="height:190px"><div class="ring" style="border-color:#fff"></div><div><div class="glyph">🪓</div><div class="big">TAP to chop</div><div class="sub">your face is glowing</div></div></div>
+  <div class="note">Steer pad hidden — no steering in the notch.<br>Grandma’s turn: the pad dims and says “Grandma…”.</div>
+</div></div>
+
+<!-- C: first strokes coach -->
+<div class="phone saw" id="coach"><div class="safe">
+  <div class="pause">II</div>
+  <div class="tree">Small pine · Back cut<b>First strokes</b></div>
+  <div class="blade pill"><svg viewBox="0 0 330 58">
+    <line x1="40" x2="290" y1="14" y2="14" stroke="#e5484d" stroke-dasharray="5 4" stroke-width="2"/>
+    <line x1="40" x2="290" y1="21" y2="21" stroke="#7bd36b" stroke-dasharray="5 4" stroke-width="2"/>
+    <path d="M40 30 Q165 30 290 30" stroke="#fff" stroke-width="5" fill="none"/>
+  </svg><div class="cut"><i style="width:4%"></i></div></div>
+  <div class="temper pill">TEMPER<b>100</b>0 tantrums</div>
+  <div class="pad pull"><div class="ghost" style="left:70px;top:50px"></div><div><div class="glyph">W</div><div class="big">HOLD…</div><div class="sub">on the orange beat</div></div></div>
+  <div class="coach">…then let go — <span>Grandma pulls back</span>.<br><small style="font-weight:600;opacity:.8">Three strokes, then you’re on your own.</small></div>
+  <div class="pad steer" style="opacity:.35"><div class="lbl">STEER · later</div><div class="track"></div><div class="knob" style="left:50%"></div></div>
+</div></div>
+
+<!-- D: option B, drag the handle -->
+<div class="phone saw" id="drag"><div class="safe">
+  <div class="pause">II</div>
+  <div class="tree">Option B · drag the handle</div>
+  <div class="temper pill">TEMPER<b>81</b>3 tantrums</div>
+  <div class="pad drag"><div class="top">DRAG THE HANDLE</div><div class="rail"></div><div class="handle">W</div><div class="ends"><span>← pull to you</span><span>forward →</span></div></div>
+  <div class="word">PUSH — let it go</div>
+  <div class="pad steer"><div class="lbl">STEER · aim at the skid</div><div class="track"></div><div class="target" style="left:62%"></div><div class="knob" style="left:48%"></div><div class="ends"><span>‹ privy</span><span>drag</span><span>skid ›</span></div></div>
+</div></div>
+
+<!-- E: menu + rotate -->
+<div class="portraits" id="menu">
+  <div><div class="tall">
+    <div class="logo">TIMBER<b>TANDEM</b></div><div class="tag">One saw. Two handles. Keep your temper.</div>
+    <div class="btn hi"><b>Solo — on this phone</b><span>Your thumbs on the saw · Grandma on the other end</span></div>
+    <div class="btn"><b>Online duo</b><span>Two homes, one saw</span></div>
+    <div class="btn off"><b>Two players — one screen</b><span>Needs a TV or laptop</span></div>
+    <div class="btn"><b>How to play</b><span>Hold, let go, never push</span></div>
+  </div><p class="cap">Main menu on a phone</p></div>
+  <div><div class="tall"><div class="rot">Turn your phone sideways</div><p>Grandma’s already holding her end.</p><div class="phoneicon"></div></div><p class="cap">Held upright during a game</p></div>
+</div>
+
+</body></html>
